@@ -132,6 +132,9 @@ int set_params(unsigned play_rate, unsigned play_channels, unsigned rec_rate, un
 			LOGE("Cannot set output config");
 			return -1;
 		}
+	
+		ioctl(my_audio_struct.fd_output, AUDIO_START, 0);
+
 	}
 	LOGI("Set params success\n");
 	return 0;
@@ -157,6 +160,8 @@ int unit_init(unsigned play_rate, unsigned play_channels, unsigned rec_rate, uns
 int do_play()
 {
 	char *buf;
+	char buff = 0xff;
+
 	int fd = open("/data/out.wav",O_RDONLY);
 	if(fd<0)
 	{
@@ -165,12 +170,31 @@ int do_play()
 	
 	LOGI("Open out.wav success");
 	
-	buf = malloc(4800);
-
+	buf = malloc(2400000);
+	
 	lseek(fd, 44, SEEK_SET);
+
+	if(read(fd, buf,2400000) != 2400000)
+	{
+		LOGE("Cannot read media data");
+	}
+
+	int n;
+	for(n=0; n<my_audio_struct.output_config.buffer_count; n++)
+	{
+		if(write(my_audio_struct.fd_output, buf, 4800) != 4800)
+		{
+			break;
+		}
+	}
+
+	ioctl(my_audio_struct.fd_output, AUDIO_START, 0);
+	
+	
 	for(;;)
 	{
 		LOGI("Now playing");
+#if 0
 		int ret = read(fd, buf,4800);
 		if(ret != 4800)
 		{
@@ -178,6 +202,13 @@ int do_play()
 		}
 
 		write(my_audio_struct.fd_output, buf, 4800);
+#endif
+		if(write(my_audio_struct.fd_output, buf, 4800) != 4800)
+		{
+			LOGI("Write exit");
+			break;
+		}
+		buf += 4800;
 	}
 }
 
@@ -191,9 +222,10 @@ jint Java_com_thinpad_audiotransfer_AudiotransferActivity_doPlay()
 	do_play();
 }
 
-#if 0 //For test only
+#if 1 //For test only
 int main()
 {
 	unit_init(44100,2,44100,2,3);
+	do_play();
 }
 #endif
