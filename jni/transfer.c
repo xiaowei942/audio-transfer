@@ -13,7 +13,7 @@
 #include <jni.h>
 
 #include <android/log.h>
-#define LOG_TAG "WEI: "
+#define LOG_TAG "WEI:jni "
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,LOG_TAG,__VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR,LOG_TAG,__VA_ARGS__)
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)a
@@ -77,33 +77,67 @@ struct audio_struct {
 	struct msm_audio_stats audio_stats;
 } my_audio_struct;
 
+char bits2[] = {
+	0x66,0x66,0x66,0x66,
+	0x66,0x66,0x66,0x66,
+	0x66,0x66,0x66,0x66,
+	0x66,0x66,0x66,0x66,
+	0x66,0x66,0x66,0x66,
+	0x66,0x66,0x66,0x66,
+	0x66,0x66,0x66,0x66,
+	0x66,0x66,0x66,0x66,
+	0x66,0x66,0x66,0x66,
+};
+
+char bits[] = {
+	0x7f,0x7f,0x00,0x00,
+	0x7f,0x7f,0x00,0x00,
+	0x7f,0x7f,0x00,0x00,
+	0x7f,0x7f,0x00,0x00,
+	0x7f,0x7f,0x00,0x00,
+	0x7f,0x7f,0x00,0x00,
+	0x7f,0x7f,0x00,0x00,
+	0x7f,0x7f,0x00,0x00,
+	0x7f,0x7f,0x00,0x00,
+};
+
 int open_files(unsigned flags)
 {
+	int fd_in, fd_out;
 	LOGI("open_file --> flags: %d",flags);
 	if(flags & INPUT_FLAG)
 	{
-		int fd = open("/dev/msm_pcm_in",O_RDWR);
-		if(fd < 0)
+		fd_in = open("/dev/msm_pcm_in",O_RDWR);
+		if(fd_in < 0)
 		{
 			LOGE("Cannot open input file");
-			return -1;		
+			goto input_failed;		
 		}
 		LOGI("Open input success");
-		my_audio_struct.fd_input = fd;
+		my_audio_struct.fd_input = fd_in;
 	}
 
 	if(flags & OUTPUT_FLAG)
 	{
-		int fd = open("/dev/msm_pcm_out",O_RDWR); 
-		if(fd < 0)
+		fd_out = open("/dev/msm_pcm_out",O_RDWR); 
+		if(fd_out < 0)
 		{
 			LOGE("Cannot open output file");
-			return -1;		
+			goto output_failed;		
 		}
 		LOGI("Open output success");
-		my_audio_struct.fd_output = fd;
+		my_audio_struct.fd_output = fd_out;
 	}
 	return 0;
+
+output_failed:
+	if(fd_out)
+	{
+		LOGI("Close /dev/msm_pcm_out");
+		close(fd_out);
+	}
+input_failed:
+	return -1;
 }
 
 int set_params(unsigned play_rate, unsigned play_channels, unsigned rec_rate, unsigned rec_channels, unsigned flags)
@@ -142,17 +176,13 @@ int set_params(unsigned play_rate, unsigned play_channels, unsigned rec_rate, un
 
 int unit_init(unsigned play_rate, unsigned play_channels, unsigned rec_rate, unsigned rec_channels, unsigned flags)
 {
-	int ret = open_files(flags);
-	if(ret != 0)
-	{
-		return -1;
-	}
 
-	ret = set_params(play_rate, play_channels, rec_rate, rec_channels, flags);
-	if(ret != 0)
-	{
+	if(open_files(flags) != 0)
 		return -1;
-	}
+
+	if(set_params(play_rate, play_channels, rec_rate, rec_channels, flags) != 0)
+		return -1;
+
 	LOGI("Init success\n");
 	return 1;
 }
@@ -160,37 +190,64 @@ int unit_init(unsigned play_rate, unsigned play_channels, unsigned rec_rate, uns
 int do_play()
 {
 	char *buf;
-	char buff = 0xff;
-
+	char *buff;
+#if 1
 	int fd = open("/data/out.wav",O_RDONLY);
 	if(fd<0)
 	{
 		LOGE("Cannot open out.wav");
 	}
-	
 	LOGI("Open out.wav success");
-	
-	buf = malloc(2400000);
-	
+#endif	
+	int number = 44100*2*2*5;
+	buf = malloc(number);
+
+	memset(buf, 0, number);
+
+#if 1
 	lseek(fd, 44, SEEK_SET);
 
-	if(read(fd, buf,2400000) != 2400000)
+	if(read(fd, buf, number) != number)
 	{
 		LOGE("Cannot read media data");
 	}
 
-	int n;
+	int m,n;	
+LOGI("1");
+
+	for(m=0; m<2000; m++){
+	//	LOGI("1-m: %d", m);
+		for(n=0; n<36; n++){
+			//LOGI("1-n: %d", n);
+			buf[n] = bits[n];
+		}
+		buf += 36;
+	}
+LOGI("11");
+	buf -= 2000*36;
+
+	for(m=0; m<2000; m++){
+	//	LOGI("11111-m: %d", m);
+		for(n=0; n<36; n++){
+			//LOGI("111111-n: %d", buf[n]);
+		}
+		buf += 36;
+	}
+	
+	buf -= 2000*36;
+	//memset(buf,0xaa,44100*2*5);
+#endif
 	for(n=0; n<my_audio_struct.output_config.buffer_count; n++)
 	{
 		if(write(my_audio_struct.fd_output, buf, 4800) != 4800)
 		{
+			LOGI("2");
 			break;
 		}
 	}
 
 	ioctl(my_audio_struct.fd_output, AUDIO_START, 0);
-	
-	
+	LOGI("3");
 	for(;;)
 	{
 		LOGI("Now playing");
@@ -203,8 +260,11 @@ int do_play()
 
 		write(my_audio_struct.fd_output, buf, 4800);
 #endif
+		//for(n=0; n<4800;n++)
+			//LOGI("BUF: %d",buf[n]);
 		if(write(my_audio_struct.fd_output, buf, 4800) != 4800)
 		{
+			
 			LOGI("Write exit");
 			break;
 		}
