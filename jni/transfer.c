@@ -111,17 +111,32 @@ char bits2[] = {
 	0x01,0x80,0x01,0x80,
 };
 
-char bit[] = {
+char bit0[] = {
 	0x01,0x80,0x01,0x80,
 	0x01,0x80,0x01,0x80,
 	0x01,0x80,0x01,0x80,
 	0x01,0x80,0x01,0x80,
-	0x01,0x80,0xff,0x7f,
+	0x01,0x80,0x01,0x80,
+	0x01,0x80,0x01,0x80,
+	0x01,0x80,0x01,0x80,
+	0x01,0x80,0x01,0x80,
+	0x01,0x80,0x01,0x80,
+};
+
+char bit1[] = {
+	0xff,0x7f,0xff,0x7f,
+	0xff,0x7f,0xff,0x7f,
+	0xff,0x7f,0xff,0x7f,
+	0xff,0x7f,0xff,0x7f,
+	0xff,0x7f,0xff,0x7f,
 	0xff,0x7f,0xff,0x7f,
 	0xff,0x7f,0xff,0x7f,
 	0xff,0x7f,0xff,0x7f,
 	0xff,0x7f,0xff,0x7f,
 };
+
+unsigned out_index = 0;
+char output[480000];
 
 int open_files(unsigned flags)
 {
@@ -240,8 +255,8 @@ int do_play()
 	}
 	
 	int m,n;
-	int len=20;
-20
+	int len=200;
+
 LOGI("1");
 
 	for(m=0; m<len; m++){
@@ -300,7 +315,78 @@ LOGI("11");
 		}
 		buf += 4800;
 	}
-	ioctl(my_audio_struct.fd_output, AUDIO_STOP, 0);
+//	ioctl(my_audio_struct.fd_output, AUDIO_STOP, 0);
+}
+
+
+int do_command()
+{
+	char *buf,*temp;
+
+	temp = output;
+
+	int n=0;
+	int number = 44100*2*2*5;
+
+	buf = malloc(number);
+	memset(buf, 0x00, number);
+
+	for(n=0; n<my_audio_struct.output_config.buffer_count; n++)
+	{
+		if(write(my_audio_struct.fd_output, buf, 4800) != 4800)
+		{
+			LOGI("2");
+			break;
+		}
+	}
+
+	
+	ioctl(my_audio_struct.fd_output, AUDIO_START, 0);
+
+	for(;;)
+	{
+		LOGI("Now playing");
+		if(write(my_audio_struct.fd_output, temp, 4800) != 4800)
+		{
+			
+			LOGI("Write exit");
+			break;
+		}
+		temp += 4800;
+	}
+}
+
+byte2chars(char in)
+{
+	int i,j;
+	for(i=7;i>=0;i--)
+	{
+		if((in>>i)&0x1)
+		{
+			for(j=0;j<36;j++)
+			{
+				output[out_index] = bit1[j];
+				out_index++;
+			}
+		}
+		else
+		{
+			for(j=0;j<36;j++)
+			{
+				output[out_index] = bit0[j];
+				out_index++;
+			}
+		}
+	}
+}
+
+int transferOneFrame()
+{
+	int i;
+	char command[] = {0xaa,0xab,0xff,0xff,0x00,0xff,0x00,0x00};
+	for(i=0;i<8;i++)
+		byte2chars(command[i]);
+	do_command();
 }
 
 jint Java_com_thinpad_audiotransfer_AudiotransferActivity_unitInit(JNIEnv *env, jobject thiz, jint play_rate, jint play_channels, jint rec_rate, jint rec_channels, jint flags)
@@ -311,6 +397,11 @@ jint Java_com_thinpad_audiotransfer_AudiotransferActivity_unitInit(JNIEnv *env, 
 jint Java_com_thinpad_audiotransfer_AudiotransferActivity_doPlay()
 {
 	do_play();
+}
+
+jint Java_com_thinpad_audiotransfer_AudiotransferActivity_transferOneFrame()
+{
+	transferOneFrame();
 }
 
 #if 1 //For test only

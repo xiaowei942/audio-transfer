@@ -35,7 +35,8 @@ public class AudiotransferActivity extends Activity {
 				unitInit(44100, 1, 44100, 2, (OUTPUT_FLAG | INPUT_FLAG));
 				break;
 			case R.id.btn_play:
-				doPlay();
+				//doPlay();
+				transferOneFrame();
 				break;
 
 			default:
@@ -48,6 +49,8 @@ public class AudiotransferActivity extends Activity {
 			int rec_rate, int rec_channels, int flags);
 
 	public static native int doPlay();
+	
+	public static native int transferOneFrame();
 
 	static {
 		System.loadLibrary("transfer");
