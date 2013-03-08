@@ -32,8 +32,8 @@ public class AudiotransferActivity extends Activity {
 			// TODO Auto-generated method stub
 			switch (arg0.getId()) {
 			case R.id.btn_init:
-				unitInit(44100, 2, 44100, 2, (OUTPUT_FLAG | INPUT_FLAG));
-				break; 
+				unitInit(44100, 1, 44100, 2, (OUTPUT_FLAG | INPUT_FLAG));
+				break;
 			case R.id.btn_play:
 				doPlay();
 				break;
