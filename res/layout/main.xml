@@ -15,4 +15,10 @@
         android:layout_width="fill_parent"
         android:layout_height="wrap_content"
         android:text="播放声音" />
+    
+    <Button 
+        android:id="@+id/btn_send"
+        android:layout_width="fill_parent"
+        android:layout_height="wrap_content"
+        android:text="发送消息" />
 </LinearLayout>

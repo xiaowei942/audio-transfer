@@ -14,6 +14,7 @@ public class AudiotransferActivity extends Activity {
 
 	private Button btn_init;
 	private Button btn_play;
+	private Button btn_send;
 
 	@Override
 	public void onCreate(Bundle savedInstanceState) {
@@ -21,8 +22,10 @@ public class AudiotransferActivity extends Activity {
 		setContentView(R.layout.main);
 		btn_init = (Button) findViewById(R.id.btn_init);
 		btn_play = (Button) findViewById(R.id.btn_play);
+		btn_send = (Button) findViewById(R.id.btn_send);
 		btn_init.setOnClickListener(listener);
 		btn_play.setOnClickListener(listener);
+		btn_send.setOnClickListener(listener);
 	}
 
 	public Button.OnClickListener listener = new OnClickListener() {
@@ -38,7 +41,9 @@ public class AudiotransferActivity extends Activity {
 				//doPlay();
 				transferOneFrame();
 				break;
-
+			case R.id.btn_send:
+				sendMessage();
+				break;
 			default:
 				break;
 			}
@@ -49,8 +54,8 @@ public class AudiotransferActivity extends Activity {
 			int rec_rate, int rec_channels, int flags);
 
 	public static native int doPlay();
-	
 	public static native int transferOneFrame();
+	public static native int sendMessage();
 
 	static {
 		System.loadLibrary("transfer");

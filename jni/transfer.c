@@ -6,6 +6,7 @@
 #include <fcntl.h>
 #include <stdint.h>
 #include <sys/mman.h>
+#include <errno.h>
 #include <sys/ioctl.h>
 
 #include <linux/ioctl.h>
@@ -13,6 +14,11 @@
 #include <jni.h>
 
 #include <android/log.h>
+
+#define SECONDS 10
+#define INPUT_DEVNAME "/dev/msm_pcm_in"
+#define OUTPUT_DEVNAME "/dev/msm_pcm_out"
+
 #define LOG_TAG "WEI:jni "
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,LOG_TAG,__VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR,LOG_TAG,__VA_ARGS__)
@@ -26,6 +32,8 @@
 #define AUDIO_GET_CONFIG   _IOR(AUDIO_IOCTL_MAGIC, 3, unsigned)
 #define AUDIO_SET_CONFIG   _IOW(AUDIO_IOCTL_MAGIC, 4, unsigned)
 #define AUDIO_GET_STATS    _IOR(AUDIO_IOCTL_MAGIC, 5, unsigned)
+
+#define GET_ARRAY_LEN(array,len) {len = (sizeof(array) / sizeof(array[0]));}
 
 /* For big-endin purpose */
 #define ID_RIFF 0x46464952
@@ -72,6 +80,7 @@ struct audio_struct {
 	int fd_input;
 	int fd_output;
 
+	char *msg;
 	char *outbuf;
 
 	unsigned play_rate;
@@ -159,6 +168,8 @@ char tail_in[] = {
 };
 
 unsigned out_index = 0;
+
+char *msg;
 char output[480000];
 
 int open_files(unsigned flags)
@@ -167,7 +178,7 @@ int open_files(unsigned flags)
 	LOGI("open_file --> flags: %d",flags);
 	if(flags & INPUT_FLAG)
 	{
-		fd_in = open("/dev/msm_pcm_in",O_RDWR);
+		fd_in = open(INPUT_DEVNAME,O_RDWR);
 		if(fd_in < 0)
 		{
 			LOGE("Cannot open input file");
@@ -179,7 +190,7 @@ int open_files(unsigned flags)
 
 	if(flags & OUTPUT_FLAG)
 	{
-		fd_out = open("/dev/msm_pcm_out",O_RDWR); 
+		fd_out = open(OUTPUT_DEVNAME,O_RDWR); 
 		if(fd_out < 0)
 		{
 			LOGE("Cannot open output file");
@@ -349,14 +360,14 @@ int do_command()
 	temp = output;
 
 	int n=0;
-	int number = 44100*2*2*5;
+	int number = my_audio_struct.play_rate*my_audio_struct.play_channels*2*5;
 
 	buf = malloc(number);
 	memset(buf, 0x00, number);
 
 	for(n=0; n<my_audio_struct.output_config.buffer_count; n++)
 	{
-		if(write(my_audio_struct.fd_output, buf, 4800) != 4800)
+		if(write(my_audio_struct.fd_output, buf, my_audio_struct.output_config.buffer_size) != my_audio_struct.output_config.buffer_size)
 		{
 			LOGI("2");
 			break;
@@ -369,13 +380,13 @@ int do_command()
 	for(;;)
 	{
 		LOGI("Now playing");
-		if(write(my_audio_struct.fd_output, temp, 4800) != 4800)
+		if(write(my_audio_struct.fd_output, temp, my_audio_struct.output_config.buffer_size) != my_audio_struct.output_config.buffer_size)
 		{
 			
 			LOGI("Write exit");
 			break;
 		}
-		temp += 4800;
+		temp += my_audio_struct.output_config.buffer_size;
 	}
 }
 
@@ -388,7 +399,7 @@ byte2chars(char in)
 		{
 			for(j=0;j<36;j++)
 			{
-				output[out_index] = bit1[j];
+				output[out_index] = bit0[j];
 				out_index++;
 			}
 		}
@@ -396,7 +407,7 @@ byte2chars(char in)
 		{
 			for(j=0;j<36;j++)
 			{
-				output[out_index] = bit0[j];
+				output[out_index] = bit1[j];
 				out_index++;
 			}
 		}
@@ -406,29 +417,77 @@ byte2chars(char in)
 int transferOneFrame()
 {
 	int i;
-	char command[] = {0xaa,0xab,0xff,0xff,0x00,0xff,0x00,0x00};
-	for(i=0;i<8;i++)
+	char command[] = {0xaa,0xab,0xaf,0xff,0x00,0xff,0x00,0x00};
+	for(i=0;i<4;i++)
 		byte2chars(command[i]);
 	do_command();
 }
 
 int make_message(char *dest, const char *head, const char *msg, const char *tail)
 {
-	memcpy(dest, head, sizeof(head));
-	memcpy(dest+sizeof(head), msg, sizeof(tail));
-	memcpy(dest+sizeof(head)+sizeof(tail), tail, sizeof(tail));
+	LOGI("make_message");
 
-	return sizeof(head) + sizeof(msg) + sizeof(tail);
+	int len;
+	GET_ARRAY_LEN(head,len);
+	memcpy(dest, head, len);
+	GET_ARRAY_LEN(tail,len);
+	memcpy(dest+strlen(head), msg, strlen(msg));
+	GET_ARRAY_LEN(tail,len);
+	memcpy(dest+strlen(head)+strlen(msg), tail, len);
+#if 1	
+	LOGI("head:%d-%s",len,head);
+	LOGI("msg:%d-%s",len,msg);
+	LOGI("tail:%d-%s",len,tail);
+	//LOGI("Total: %d", strlen(head) + strlen(msg) + strlen(tail));
+#endif
+	int count = strlen(head) + strlen(msg) + strlen(tail)+10;
+	int t;
+	for(t=0;t<count;t++)
+	{
+		LOGI("dest[%d]: 0x%x",t,dest[t]);
+	}
+	return strlen(head) + strlen(msg) + strlen(tail);
 }
 
-void send_message(const char *msg)
+int do_send(struct audio_struct *aud)
+{
+	if(!aud)
+		return -EINVAL;
+
+	int n=0;
+	for(n=0; n<aud->output_config.buffer_count; n++)
+	{
+		if(write(aud->fd_output, aud->msg, aud->output_config.buffer_size) != aud->output_config.buffer_size)
+		{
+			LOGI("2");
+			break;
+		}
+	}
+
+	ioctl(aud->fd_output, AUDIO_START, 0);
+
+	for(;;)
+	{
+		LOGI("Sending ...");
+		if(write(aud->fd_output, aud->msg, aud->output_config.buffer_size) != aud->output_config.buffer_size)
+		{
+			LOGI("Write exit");
+			break;
+		}
+		aud->msg += aud->output_config.buffer_size;
+	}
+	return 0;
+}
+
+void send_message(struct audio_struct *aud, const int count)
 {
 	int i;
-	int count = sizeof(msg);
+	LOGI("count = %d",count);
 	for(i=0;i<count;i++)
 	{
-		byte2chars(msg[i]);
+		byte2chars(aud->msg[i]);
 	}
+	do_send(aud);
 }
 
 jint Java_com_thinpad_audiotransfer_AudiotransferActivity_unitInit(JNIEnv *env, jobject thiz, jint play_rate, jint play_channels, jint rec_rate, jint rec_channels, jint flags)
@@ -444,6 +503,23 @@ jint Java_com_thinpad_audiotransfer_AudiotransferActivity_doPlay()
 jint Java_com_thinpad_audiotransfer_AudiotransferActivity_transferOneFrame()
 {
 	transferOneFrame();
+}
+
+jint Java_com_thinpad_audiotransfer_AudiotransferActivity_sendMessage()
+{
+	LOGI("1");
+	char *tmp="test";
+	char *buf;
+	buf = (char *)malloc(48000);
+	memset(buf, 0, 48000);
+ 	int len = make_message(buf, head_out, tmp, tail_out);
+	LOGI("2");
+	my_audio_struct.msg = buf;
+	send_message(&my_audio_struct, len);
+	free(buf);
+	my_audio_struct.msg = NULL;
+	LOGI("3");
+	return 0;
 }
 
 #if 1 //For test only
