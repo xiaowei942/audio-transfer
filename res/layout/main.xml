@@ -21,4 +21,10 @@
         android:layout_width="fill_parent"
         android:layout_height="wrap_content"
         android:text="发送消息" />
+    
+    <Button 
+        android:id="@+id/btn_read"
+        android:layout_width="fill_parent"
+        android:layout_height="wrap_content"
+        android:text="读取消息" />
 </LinearLayout>

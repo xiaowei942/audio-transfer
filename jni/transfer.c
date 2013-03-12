@@ -19,15 +19,17 @@
 #define INPUT_DEVNAME "/dev/msm_pcm_in"
 #define OUTPUT_DEVNAME "/dev/msm_pcm_out"
 
+#define __DEBUG
 #define LOG_TAG "WEI:jni "
+
 #ifdef __DEBUG
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,LOG_TAG,__VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR,LOG_TAG,__VA_ARGS__)
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)a
 #else
-#define LOGI(...) //
-#define LOGE(...) //
-#define LOGD(...) //
+#define LOGI(...) 
+#define LOGE(...) 
+#define LOGD(...) 
 #endif
 #define AUDIO_IOCTL_MAGIC 'a'
 
@@ -100,15 +102,6 @@ struct audio_struct {
 } my_audio_struct;
 
 char bits2[] = {
-	0xff,0x7f,0xff,0x7f,
-	0xff,0x7f,0xff,0x7f,
-	0xff,0x7f,0xff,0x7f,
-	0xff,0x7f,0xff,0x7f,
-	0xff,0x7f,0xff,0x7f,
-	0xff,0x7f,0xff,0x7f,
-	0xff,0x7f,0xff,0x7f,
-	0xff,0x7f,0xff,0x7f,
-	0xff,0x7f,0xff,0x7f,
 	0x01,0x80,0x01,0x80,
 	0x01,0x80,0x01,0x80,
 	0x01,0x80,0x01,0x80,
@@ -117,7 +110,17 @@ char bits2[] = {
 	0x01,0x80,0x01,0x80,
 	0x01,0x80,0x01,0x80,
 	0x01,0x80,0x01,0x80,
-	0x01,0x80,0x01,0x80
+	0x01,0x80,0x01,0x80,
+
+	0xff,0x7f,0xff,0x7f,
+	0xff,0x7f,0xff,0x7f,
+	0xff,0x7f,0xff,0x7f,
+	0xff,0x7f,0xff,0x7f,
+	0xff,0x7f,0xff,0x7f,
+	0xff,0x7f,0xff,0x7f,
+	0xff,0x7f,0xff,0x7f,
+	0xff,0x7f,0xff,0x7f,
+	0xff,0x7f,0xff,0x7f
 };
 
 //扩展位0用数据信息
@@ -225,7 +228,32 @@ int set_params(unsigned play_rate, unsigned play_channels, unsigned rec_rate, un
 {
 	if(flags & INPUT_FLAG)
 	{
-				
+		/* config change should be a read-modify-write operation */
+		if (ioctl(my_audio_struct.fd_input, AUDIO_GET_CONFIG, &my_audio_struct.input_config)) {
+			LOGE("cannot get input config");
+			return -1;
+		}
+
+		my_audio_struct.input_config.channel_count = 1;
+		my_audio_struct.input_config.sample_rate = 44100;
+		if (ioctl(my_audio_struct.fd_input, AUDIO_SET_CONFIG, &my_audio_struct.input_config)) {
+			LOGE("cannot write audio config");
+			return -1;
+		}
+
+		if (ioctl(my_audio_struct.fd_input, AUDIO_GET_CONFIG, &my_audio_struct.input_config)) {
+			LOGE("cannot read audio config");
+			return -1;
+		}
+
+		int sz = my_audio_struct.input_config.buffer_size;
+
+		LOGE("buffer size %d x %d\n", sz, my_audio_struct.input_config.buffer_count);
+		if (sz > sizeof(input)) {
+			LOGE("buffer size %d too large\n", sz);
+			return -1;
+ 		}
+		
 	}
 
 	if(flags & OUTPUT_FLAG)
@@ -549,6 +577,96 @@ void send_message(struct audio_struct *aud, const int count)
 	do_send(aud);
 }
 
+int test_doRec()
+{
+    struct wav_header hdr;
+    unsigned char buf[8192];
+    struct msm_audio_config cfg;
+    unsigned sz, n;
+    int fd, afd;
+    unsigned total = 0;
+    unsigned char tmp;
+    
+
+
+
+    if (ioctl(my_audio_struct.fd_input, AUDIO_START, 0)) {
+        perror("cannot start audio");
+        goto fail;
+    }
+
+    fcntl(0, F_SETFL, O_NONBLOCK);
+    fprintf(stderr,"\n*** RECORDING * HIT ENTER TO STOP ***\n");
+
+    for (;;) {
+        while (read(0, &tmp, 1) == 1) {
+            if ((tmp == 13) || (tmp == 10)) goto done;
+        }
+        if (read(afd, buf, sz) != sz) {
+            perror("cannot read buffer");
+            goto fail;
+        }
+        if (write(fd, buf, sz) != sz) {
+            perror("cannot write buffer");
+            goto fail;
+        }
+        total += sz;
+
+    }
+done:
+    close(my_audio_struct.fd_input);
+
+        /* update lengths in header */
+    hdr.data_sz = total;
+    hdr.riff_sz = total + 8 + 16 + 8;
+    lseek(fd, 0, SEEK_SET);
+    write(fd, &hdr, sizeof(hdr));
+    close(fd);
+    return 0;
+
+fail:
+    close(afd);
+    close(fd);
+    return -1;
+}
+
+
+int test_readOneFrame()
+{
+    unsigned char buf[44100*2];
+    unsigned total = 0 ,i;
+    unsigned char tmp;
+
+    if (ioctl(my_audio_struct.fd_input, AUDIO_START, 0)) {
+        perror("cannot start audio");
+        goto fail;
+    }
+
+    fcntl(0, F_SETFL, O_NONBLOCK);
+    fprintf(stderr,"\n*** RECORDING * HIT ENTER TO STOP ***\n");
+
+ //   for (;;) 
+    {
+        if (read(my_audio_struct.fd_input, buf, my_audio_struct.input_config.buffer_size*20) != my_audio_struct.input_config.buffer_size*20) {
+            LOGE("cannot read buffer");
+            goto fail;
+        }
+	short *temp = buf;
+	for(i=0;i<my_audio_struct.input_config.buffer_size*20/2;i++)
+	{
+		LOGI("buf[%d]: %d", i, *(temp++));
+	}
+    }
+done:
+    close(my_audio_struct.fd_input);
+
+        /* update lengths in header */
+    return 0;
+
+fail:
+    return -1;
+}
+
 jint Java_com_thinpad_audiotransfer_AudiotransferActivity_unitInit(JNIEnv *env, jobject thiz, jint play_rate, jint play_channels, jint rec_rate, jint rec_channels, jint flags)
 {
  	return unit_init(play_rate, play_channels, rec_rate, rec_channels, flags);
@@ -593,10 +711,16 @@ jint Java_com_thinpad_audiotransfer_AudiotransferActivity_sendMessage(JNIEnv *en
 	return 0;
 }
 
+jint Java_com_thinpad_audiotransfer_AudiotransferActivity_testReadOneFrame()
+{
+	test_readOneFrame();
+}
+
 #if 1 //For test only
 int main()
 {
 	unit_init(44100,2,44100,2,3);
-	test_doSend();
+	//test_doSend();
+	test_doRec();
 }
 #endif

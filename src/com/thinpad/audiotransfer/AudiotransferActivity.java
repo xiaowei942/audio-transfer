@@ -15,6 +15,7 @@ public class AudiotransferActivity extends Activity {
 	private Button btn_init;
 	private Button btn_play;
 	private Button btn_send;
+	private Button btn_read;
 
 	@Override
 	public void onCreate(Bundle savedInstanceState) {
@@ -23,9 +24,11 @@ public class AudiotransferActivity extends Activity {
 		btn_init = (Button) findViewById(R.id.btn_init);
 		btn_play = (Button) findViewById(R.id.btn_play);
 		btn_send = (Button) findViewById(R.id.btn_send);
+		btn_read = (Button) findViewById(R.id.btn_read);
 		btn_init.setOnClickListener(listener);
 		btn_play.setOnClickListener(listener);
 		btn_send.setOnClickListener(listener);
+		btn_read.setOnClickListener(listener);
 	}
 
 	public Button.OnClickListener listener = new OnClickListener() {
@@ -38,11 +41,14 @@ public class AudiotransferActivity extends Activity {
 				unitInit(44100, 1, 44100, 2, (OUTPUT_FLAG | INPUT_FLAG));
 				break;
 			case R.id.btn_play:
-				//doPlay();
+				//testSend();
 				transferOneFrame();
 				break;
 			case R.id.btn_send:
 				sendMessage("test".getBytes(), "test".getBytes().length);
+				break;
+			case R.id.btn_read:
+				testReadOneFrame();
 				break;
 			default:
 				break;
@@ -53,8 +59,9 @@ public class AudiotransferActivity extends Activity {
 	public static native int unitInit(int play_rate, int play_channels,
 			int rec_rate, int rec_channels, int flags);
 
-	public static native int doPlay();
+	public static native int testSend();
 	public static native int transferOneFrame();
+	public static native int testReadOneFrame();
 	public static native int sendMessage(byte[] str, int length);
 
 	static {
