@@ -42,7 +42,7 @@ public class AudiotransferActivity extends Activity {
 				transferOneFrame();
 				break;
 			case R.id.btn_send:
-				sendMessage();
+				sendMessage("test".getBytes(), "test".getBytes().length);
 				break;
 			default:
 				break;
@@ -55,7 +55,7 @@ public class AudiotransferActivity extends Activity {
 
 	public static native int doPlay();
 	public static native int transferOneFrame();
-	public static native int sendMessage();
+	public static native int sendMessage(byte[] str, int length);
 
 	static {
 		System.loadLibrary("transfer");

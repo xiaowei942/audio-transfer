@@ -20,10 +20,15 @@
 #define OUTPUT_DEVNAME "/dev/msm_pcm_out"
 
 #define LOG_TAG "WEI:jni "
+#ifdef __DEBUG
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,LOG_TAG,__VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR,LOG_TAG,__VA_ARGS__)
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)a
-
+#else
+#define LOGI(...) //
+#define LOGE(...) //
+#define LOGD(...) //
+#endif
 #define AUDIO_IOCTL_MAGIC 'a'
 
 #define AUDIO_START        _IOW(AUDIO_IOCTL_MAGIC, 0, unsigned)
@@ -94,13 +99,6 @@ struct audio_struct {
 	struct msm_audio_stats audio_stats;
 } my_audio_struct;
 
-/*
- *数据
-
- *
- *
- * 
- */
 char bits2[] = {
 	0xff,0x7f,0xff,0x7f,
 	0xff,0x7f,0xff,0x7f,
@@ -122,6 +120,7 @@ char bits2[] = {
 	0x01,0x80,0x01,0x80
 };
 
+//扩展位0用数据信息
 char bit0[] = {
 	0x01,0x80,0x01,0x80,
 	0x01,0x80,0x01,0x80,
@@ -134,6 +133,7 @@ char bit0[] = {
 	0x01,0x80,0x01,0x80
 };
 
+//扩展位1用数据信息
 char bit1[] = {
 	0xff,0x7f,0xff,0x7f,
 	0xff,0x7f,0xff,0x7f,
@@ -146,16 +146,19 @@ char bit1[] = {
 	0xff,0x7f,0xff,0x7f
 };
 
+//输出消息头
 char head_out[] = {
 	0xaa,0xaa,0xaa,0xaa,
 	0xaa,0xaa,0xaa,0xaa,
 	0xaa,0xaa,0xff,0xff
 };
 
+//输出消息尾
 char tail_out[] = {
 	0x00,0x00
 };
 
+//输入消息头
 char head_in[] = {
 	0xaa,0xaa,0xaa,0xaa,
 	0xaa,0xaa,0xaa,0xaa,
@@ -163,14 +166,21 @@ char head_in[] = {
 	0xff,0xff
 };
 
+//输入消息尾
 char tail_in[] = {
 	0xff,0xff,0xff,0xff
 };
 
-unsigned out_index = 0;
+char input[44100*2*10];
+char output[480000]; //实际输出数据
+unsigned out_index = 0; //实际输出索引
+unsigned out_count = 0; //实际输出计数
 
-char *msg;
-char output[480000];
+char *prefill; 	//预填充缓冲区
+int head_len=0; //消息头长度
+int tail_len=0; //消息尾长度
+int msg_len=0; 	//消息长度
+int sum=0; 	//消息字节总数
 
 int open_files(unsigned flags)
 {
@@ -263,7 +273,7 @@ int make_databit_(int bit)
 	
 }
 
-int do_play()
+int test_doSend()
 {
 	char *buf;
 	char *buff;
@@ -353,7 +363,7 @@ LOGI("11");
 }
 
 
-int do_command()
+int test_do_command()
 {
 	char *buf,*temp;
 
@@ -393,6 +403,7 @@ int do_command()
 byte2chars(char in)
 {
 	int i,j;
+	//依次转换输出数据字符数组中的每一位(由高到低)
 	for(i=7;i>=0;i--)
 	{
 		if((in>>i)&0x1)
@@ -416,7 +427,7 @@ byte2chars(char in)
 	}
 }
 
-int transferOneFrame()
+int test_transferOneFrame()
 {
 	int i;
 	char command[] = {0xaa,0xab,0xaf,0xff,0x00,0xff,0x00,0x00};
@@ -425,52 +436,43 @@ int transferOneFrame()
 		LOGI("command[%d]: 0x%x",i,command[i]);
 		byte2chars(command[i]);
 	}
-	do_command();
+	test_do_command();
 }
 
 int make_message(char *dest, char *msg, int msg_len)
 {
 	LOGI("make_message");
 
-	int head_len,tail_len,len,sum=0;
-
-	GET_ARRAY_LEN(head_out,head_len);
 	memcpy(dest, head_out, head_len);
-
 	memcpy(dest+head_len, msg,msg_len);
-	GET_ARRAY_LEN(tail_out,tail_len);
 	memcpy(dest+head_len+msg_len, tail_out, tail_len);
 
-#if 0	
-	GET_ARRAY_LEN(head_out,len);
-	LOGI("head:%d-%s",len,head_out);
-	GET_ARRAY_LEN(msg,length);
-	LOGI("msg:%d-%s",length,msg);
-	GET_ARRAY_LEN(tail_out,len);
-	LOGI("tail:%d-%s",len,tail_out);
-	//LOGI("Total: %d", strlen(head) + strlen(msg) + strlen(tail));
-#endif
+#if 1	
+	LOGI("head_len:%d",head_len);
+	LOGI("msg_len:%d",msg_len);
+	LOGI("tail_len:%d",tail_len);
 	
-	sum = head_len + tail_len + msg_len;
 	int t;
 	for(t=0;t<sum;t++)
 	{
 		LOGI("dest[%d]: 0x%x",t,dest[t]);
 	}
+#endif
 	return sum;
 }
 
 int do_send(struct audio_struct *aud)
 {
+	LOGI("do_send");
 	if(!aud)
 		return -EINVAL;
 
-	char *temp=output;
-	int n=0;
+	char *temp = output;
 
+	int n=0;
 	for(n=0; n<aud->output_config.buffer_count; n++)
 	{
-		if(write(aud->fd_output, temp, aud->output_config.buffer_size) != aud->output_config.buffer_size)
+		if(write(aud->fd_output, prefill, aud->output_config.buffer_size) != aud->output_config.buffer_size)
 		{
 			LOGI("Prefill failed");
 			break;
@@ -478,29 +480,72 @@ int do_send(struct audio_struct *aud)
 	}
 
 	ioctl(aud->fd_output, AUDIO_START, 0);
+	int i;
 
-	for(;;)
+	for(i=0; i<out_count/aud->output_config.buffer_size; i++)
 	{
 		LOGI("Sending ...");
 		if(write(aud->fd_output, temp, aud->output_config.buffer_size) != aud->output_config.buffer_size)
 		{
-			LOGI("Send exit");
+			LOGI("Send failed");
 			break;
 		}
 		temp += aud->output_config.buffer_size;
 	}
+	LOGI("Send success");
 	return 0;
+}
+
+void transform_message(struct audio_struct *aud)
+{
+	int i,j;
+
+	//以输出缓冲区大小对齐数据（向上），并填充为‘0’
+	out_count = ((out_index/my_audio_struct.output_config.buffer_size)+1)*my_audio_struct.output_config.buffer_size;
+	for(i=out_index; i<out_count; i++)
+	{
+		for(j=0;j<36;j++)
+		{
+			output[i] = bit1[j];
+		}
+	}
+
+	LOGI("out_count: %d", out_count);
+	LOGI("out_index: %d",out_index);
+
 }
 
 void send_message(struct audio_struct *aud, const int count)
 {
-	int i;
+	
+	int i,j;
 	LOGI("count = %d",count);
+
+	out_index=0;
+
 	for(i=0;i<count;i++)
 	{
 		LOGI("msg[%d]: 0x%x", i, aud->msg[i]);
 		byte2chars(aud->msg[i]);
 	}
+	
+	transform_message(aud);
+
+	//设置预填充缓冲区为输出’0‘
+	
+	int prefill_size = my_audio_struct.output_config.buffer_count*my_audio_struct.output_config.buffer_size;
+
+	if(!prefill)
+		prefill = malloc(prefill_size);
+
+	for(i=0; i<prefill_size; i++)
+	{
+		for(j=0;j<36;j++)
+		{
+			prefill[i] = bit1[j];
+		}
+	}
+
 	do_send(aud);
 }
 
@@ -509,30 +554,42 @@ jint Java_com_thinpad_audiotransfer_AudiotransferActivity_unitInit(JNIEnv *env, 
  	return unit_init(play_rate, play_channels, rec_rate, rec_channels, flags);
 }
 
-jint Java_com_thinpad_audiotransfer_AudiotransferActivity_doPlay()
+jint Java_com_thinpad_audiotransfer_AudiotransferActivity_testSend()
 {
-	do_play();
+	test_doSend();
 }
 
 jint Java_com_thinpad_audiotransfer_AudiotransferActivity_transferOneFrame()
 {
-	transferOneFrame();
+	test_transferOneFrame();
 }
 
-jint Java_com_thinpad_audiotransfer_AudiotransferActivity_sendMessage()
+jint Java_com_thinpad_audiotransfer_AudiotransferActivity_sendMessage(JNIEnv *env, jobject thiz, jbyteArray bytes, jint length)
 {
-	LOGI("1");
-	char *tmp="test";
+	//char *tmp="test";
+
+	//获取消息内容
+	const jbyte* tmp = (*env)->GetByteArrayElements(env,bytes,JNI_FALSE);
+
+	msg_len = length;	 
+	GET_ARRAY_LEN(head_out,head_len);
+	GET_ARRAY_LEN(tail_out,tail_len);
+
+	//计算总消息长度
+	sum = head_len + tail_len + msg_len;
+
 	char *buf;
-	buf = (char *)malloc(48000);
-	memset(buf, 0, 48000);
- 	int len = make_message(buf, tmp, 4);
-	LOGI("2");
+	buf = (char *)malloc(sum);
+	memset(buf, 0xff, sum);
+
+ 	int len = make_message(buf, tmp, msg_len);
+
 	my_audio_struct.msg = buf;
 	send_message(&my_audio_struct, len);
+
 	free(buf);
 	my_audio_struct.msg = NULL;
-	LOGI("3");
+
 	return 0;
 }
 
@@ -540,6 +597,6 @@ jint Java_com_thinpad_audiotransfer_AudiotransferActivity_sendMessage()
 int main()
 {
 	unit_init(44100,2,44100,2,3);
-	do_play();
+	test_doSend();
 }
 #endif
