@@ -363,11 +363,11 @@ int do_command()
 	int number = my_audio_struct.play_rate*my_audio_struct.play_channels*2*5;
 
 	buf = malloc(number);
-	memset(buf, 0x00, number);
+	memset(buf, temp, number);
 
 	for(n=0; n<my_audio_struct.output_config.buffer_count; n++)
 	{
-		if(write(my_audio_struct.fd_output, buf, my_audio_struct.output_config.buffer_size) != my_audio_struct.output_config.buffer_size)
+		if(write(my_audio_struct.fd_output, temp, my_audio_struct.output_config.buffer_size) != my_audio_struct.output_config.buffer_size)
 		{
 			LOGI("2");
 			break;
@@ -397,6 +397,7 @@ byte2chars(char in)
 	{
 		if((in>>i)&0x1)
 		{
+			LOGI("1");
 			for(j=0;j<36;j++)
 			{
 				output[out_index] = bit0[j];
@@ -405,6 +406,7 @@ byte2chars(char in)
 		}
 		else
 		{
+			LOGI("0");
 			for(j=0;j<36;j++)
 			{
 				output[out_index] = bit1[j];
@@ -418,35 +420,44 @@ int transferOneFrame()
 {
 	int i;
 	char command[] = {0xaa,0xab,0xaf,0xff,0x00,0xff,0x00,0x00};
-	for(i=0;i<4;i++)
+	for(i=0;i<8;i++)
+	{
+		LOGI("command[%d]: 0x%x",i,command[i]);
 		byte2chars(command[i]);
+	}
 	do_command();
 }
 
-int make_message(char *dest, const char *head, const char *msg, const char *tail)
+int make_message(char *dest, char *msg, int msg_len)
 {
 	LOGI("make_message");
 
-	int len;
-	GET_ARRAY_LEN(head,len);
-	memcpy(dest, head, len);
-	GET_ARRAY_LEN(tail,len);
-	memcpy(dest+strlen(head), msg, strlen(msg));
-	GET_ARRAY_LEN(tail,len);
-	memcpy(dest+strlen(head)+strlen(msg), tail, len);
-#if 1	
-	LOGI("head:%d-%s",len,head);
-	LOGI("msg:%d-%s",len,msg);
-	LOGI("tail:%d-%s",len,tail);
+	int head_len,tail_len,len,sum=0;
+
+	GET_ARRAY_LEN(head_out,head_len);
+	memcpy(dest, head_out, head_len);
+
+	memcpy(dest+head_len, msg,msg_len);
+	GET_ARRAY_LEN(tail_out,tail_len);
+	memcpy(dest+head_len+msg_len, tail_out, tail_len);
+
+#if 0	
+	GET_ARRAY_LEN(head_out,len);
+	LOGI("head:%d-%s",len,head_out);
+	GET_ARRAY_LEN(msg,length);
+	LOGI("msg:%d-%s",length,msg);
+	GET_ARRAY_LEN(tail_out,len);
+	LOGI("tail:%d-%s",len,tail_out);
 	//LOGI("Total: %d", strlen(head) + strlen(msg) + strlen(tail));
 #endif
-	int count = strlen(head) + strlen(msg) + strlen(tail)+10;
+	
+	sum = head_len + tail_len + msg_len;
 	int t;
-	for(t=0;t<count;t++)
+	for(t=0;t<sum;t++)
 	{
 		LOGI("dest[%d]: 0x%x",t,dest[t]);
 	}
-	return strlen(head) + strlen(msg) + strlen(tail);
+	return sum;
 }
 
 int do_send(struct audio_struct *aud)
@@ -454,12 +465,14 @@ int do_send(struct audio_struct *aud)
 	if(!aud)
 		return -EINVAL;
 
+	char *temp=output;
 	int n=0;
+
 	for(n=0; n<aud->output_config.buffer_count; n++)
 	{
-		if(write(aud->fd_output, aud->msg, aud->output_config.buffer_size) != aud->output_config.buffer_size)
+		if(write(aud->fd_output, temp, aud->output_config.buffer_size) != aud->output_config.buffer_size)
 		{
-			LOGI("2");
+			LOGI("Prefill failed");
 			break;
 		}
 	}
@@ -469,12 +482,12 @@ int do_send(struct audio_struct *aud)
 	for(;;)
 	{
 		LOGI("Sending ...");
-		if(write(aud->fd_output, aud->msg, aud->output_config.buffer_size) != aud->output_config.buffer_size)
+		if(write(aud->fd_output, temp, aud->output_config.buffer_size) != aud->output_config.buffer_size)
 		{
-			LOGI("Write exit");
+			LOGI("Send exit");
 			break;
 		}
-		aud->msg += aud->output_config.buffer_size;
+		temp += aud->output_config.buffer_size;
 	}
 	return 0;
 }
@@ -485,6 +498,7 @@ void send_message(struct audio_struct *aud, const int count)
 	LOGI("count = %d",count);
 	for(i=0;i<count;i++)
 	{
+		LOGI("msg[%d]: 0x%x", i, aud->msg[i]);
 		byte2chars(aud->msg[i]);
 	}
 	do_send(aud);
@@ -512,7 +526,7 @@ jint Java_com_thinpad_audiotransfer_AudiotransferActivity_sendMessage()
 	char *buf;
 	buf = (char *)malloc(48000);
 	memset(buf, 0, 48000);
- 	int len = make_message(buf, head_out, tmp, tail_out);
+ 	int len = make_message(buf, tmp, 4);
 	LOGI("2");
 	my_audio_struct.msg = buf;
 	send_message(&my_audio_struct, len);
