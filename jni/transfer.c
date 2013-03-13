@@ -8,12 +8,11 @@
 #include <sys/mman.h>
 #include <errno.h>
 #include <sys/ioctl.h>
-
 #include <linux/ioctl.h>
 
 #include <jni.h>
-
 #include <android/log.h>
+#include <pthread.h>
 
 #define SECONDS 10
 #define INPUT_DEVNAME "/dev/msm_pcm_in"
@@ -185,6 +184,13 @@ int tail_len=0; //消息尾长度
 int msg_len=0; 	//消息长度
 int sum=0; 	//消息字节总数
 
+int can_read = 0;
+int current_pos = 0;
+int buffered = 0;
+int buffer_full = 0;
+
+int test_readOneFrame();
+
 int open_files(unsigned flags)
 {
 	int fd_in, fd_out;
@@ -293,6 +299,7 @@ int unit_init(unsigned play_rate, unsigned play_channels, unsigned rec_rate, uns
 		return -1;
 
 	LOGI("Init success\n");
+
 	return 1;
 }
 
@@ -630,41 +637,137 @@ fail:
     return -1;
 }
 
+int find_head(int start, int end)
+{
+	LOGI("find_head");
+	LOGI("start at: %d  end at: %d", start, end);
+	int i=start,j=0,k=end/2;
+	signed short *buf = input;
+	for(;i<k;i+=18)
+	{
+		if(buf[i] > -8192 && buf[i] < 8192 )
+		{
+			j++;
+		}
+		else
+		{
+			j=0;
+		}
+		if(j>=4)
+		{
+			LOGI("Now pre start: %d",i);
+			return i;
+		}
+	}
+
+		
+}
+
+int read_byte()
+{
+	
+}
+
+int find_head_end(int start, int end)
+{
+	LOGI("find_head_end");
+	LOGI("start at: %d  end at: %d", start, end);
+	int i=start,j=0,k=end/2;
+	signed short *buf = input;
+	int start_point;
+	
+	for(;i<k;i+=18)
+	{
+		if(!(buf[i] & 1<<15) && (buf[i] & 1<<13))
+		{
+			LOGI("Now head end at: %d",i);
+			start_point = i;
+			break;
+		}
+	}
+
+	int c,m,n;
+	char temp[12];
+
+	int test=0;
+
+	for(i=start_point; i<k; i+=18)
+	{
+		//12字节其实标志
+		for(m=0; m<12; m++)
+		{
+			for(n=7; n>=0;n--)
+			{
+				//为正数，且大于32767－8192
+				if(buf[i+9]>=8192)
+				{
+					temp[m] |= 1<<n;
+					test=1;
+				}
+				//为负数，且小于－32768＋8192
+				else if(buf[i+9]<=-8192)
+				{
+					temp[m] &= ~(1<<n);
+					test=0;
+				}
+				//在中间范围，无效数据，概率较小，其实在除起始之前的0v位置时刻外都为高或低，完全看符号位
+				else
+				{
+					test=3;
+				}
+				LOGI("i: %d--%d", i+9,test);
+				i+=18;
+			}
+			LOGI("Step1 --> data[%d]: 0x%x", m, temp[m]);
+		}
+ 	}
+		while(1);
+}
 
 int test_readOneFrame()
 {
-    unsigned char buf[44100*2];
-    unsigned total = 0 ,i;
-    unsigned char tmp;
+	signed char *buf = input;
+    	unsigned total = 0, cur = 0,i;
 
-    if (ioctl(my_audio_struct.fd_input, AUDIO_START, 0)) {
-        perror("cannot start audio");
-        goto fail;
-    }
+     	if (ioctl(my_audio_struct.fd_input, AUDIO_START, 0)) {
+         	perror("cannot start audio");
+        	goto fail;
+     	}
 
-    fcntl(0, F_SETFL, O_NONBLOCK);
-    fprintf(stderr,"\n*** RECORDING * HIT ENTER TO STOP ***\n");
+     	fcntl(0, F_SETFL, O_NONBLOCK);
+     	fprintf(stderr,"\n*** RECORDING * HIT ENTER TO STOP ***\n");
+for(;;)
+{
+	if(total<44100*2*10)
+	{  
+		if (read(my_audio_struct.fd_input, buf+total, my_audio_struct.input_config.buffer_size*20) != my_audio_struct.input_config.buffer_size*20) 
+		{
+             		LOGE("cannot read buffer");
+             		goto fail;
+        	}
+		total += my_audio_struct.input_config.buffer_size*20;
+		cur = total;
+		buffered = total;
+	}
 
- //   for (;;) 
-    {
-        if (read(my_audio_struct.fd_input, buf, my_audio_struct.input_config.buffer_size*20) != my_audio_struct.input_config.buffer_size*20) {
-            LOGE("cannot read buffer");
-            goto fail;
-        }
-	short *temp = buf;
+#if 1
+	short *temp = input;
+
 	for(i=0;i<my_audio_struct.input_config.buffer_size*20/2;i++)
 	{
 		LOGI("buf[%d]: %d", i, *(temp++));
 	}
-    }
+#endif
+		find_head(0,cur);
+}
 done:
-    close(my_audio_struct.fd_input);
+     	close(my_audio_struct.fd_input);
 
         /* update lengths in header */
-    return 0;
+     	return 0;
 
 fail:
-    return -1;
+     	return -1;
 }
 
 jint Java_com_thinpad_audiotransfer_AudiotransferActivity_unitInit(JNIEnv *env, jobject thiz, jint play_rate, jint play_channels, jint rec_rate, jint rec_channels, jint flags)
@@ -713,7 +816,65 @@ jint Java_com_thinpad_audiotransfer_AudiotransferActivity_sendMessage(JNIEnv *en
 
 jint Java_com_thinpad_audiotransfer_AudiotransferActivity_testReadOneFrame()
 {
-	test_readOneFrame();
+	can_read = 1;
+	buffer_full = 0;
+	//test_readOneFrame();
+}
+
+jint Java_com_thinpad_audiotransfer_AudiotransferActivity_testSaveData()
+{
+	int fd = open("/sdcard/out.txt", O_CREAT | O_RDWR, 0666);
+	if (fd < 0) {
+         	LOGE("cannot open out file");
+        	return -1;
+    	}
+	if (write(fd, input, 44100*2*10) != 44100*2*10) {
+             	LOGE("cannot write buffer");
+           return -1;
+        }
+	LOGI("Output to file success");
+	close(fd);
+}
+
+jint Java_com_thinpad_audiotransfer_AnalysisData_testReadData()
+{
+	LOGI("Now waitting for start signal");
+	while(1)
+	{
+		if(can_read)
+			break;
+	}
+
+	int fd = open("/sdcard/out.txt", O_RDONLY);
+	if (fd < 0) {
+         	LOGE("cannot open in file");
+        	return -1;
+    	}
+
+	if (read(fd, input, 180000) != 180000) {
+             	LOGE("cannot read buffer");
+           return -1;
+        }
+	LOGI("Read input file success");
+	close(fd);
+
+	int i = find_head(0, 180000);
+	if(i)
+	{
+		find_head_end(i,180000-i);
+	}
+}
+
+jint Java_com_thinpad_audiotransfer_AudiotransferActivity_testReadData()
+{	
+	can_read = 1;
+	Java_com_thinpad_audiotransfer_AnalysisData_testReadData();
+}
+
+jint Java_com_thinpad_audiotransfer_AudiotransferActivity_createThread()
+{
+	pthread_create(NULL, NULL, &test_readOneFrame, NULL);
+	LOGI("Read thread create success");
 }
 
 #if 1 //For test only
