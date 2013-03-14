@@ -637,15 +637,116 @@ fail:
     return -1;
 }
 
-int find_head(int start, int end)
+int read_byte(char *temp)
 {
-	LOGI("find_head");
+	LOGI("read_byte");
+	unsigned char tmp=0;
+	//current_pos+=18;
+	int i,j=current_pos,pos=current_pos;
+	short *buf = input;
+
+	LOGI(" 	  current_pos: %d", current_pos);
+
+	if(buf[j] >= -24576)
+		return -1; 	//Bad start bit
+
+	while(1)
+	{
+		// 连续3个高电平，则第一个高电平为数据位起始位置
+		if(buf[j] >= 24575 && buf[j+1] >= 24575 && buf[j+2] >= 24575)
+		{
+			current_pos = j; //将当前位置设置为高电平起始位置
+			break;
+		}
+		
+		// 数据起始标志后，如果18个数据还没到数据位起始位置，则出错
+		if((j-pos)>18)
+			return -1;
+
+		j++;
+	}
+	
+	//调整到第一位的中间位（0b110表示位1，0b100表示位0）
+	for(i=7,j+=9+18; i>=0; i--,j+=3*18)
+	{
+		if(buf[j] > 24575)
+		{
+			tmp |= (1<<i);
+		}
+		else if(buf[j]<-24576)
+		{
+			tmp &= ~(1<<i);
+		}
+		else
+		{
+			LOGE("INVAL");
+		}
+	}
+
+	//将当前位置设置为停止位上
+	current_pos = j-18;
+	// 错误停止位
+	if(buf[current_pos] <= 24575)
+	{
+		LOGE("Error on stop bit");
+		return 0;
+	}
+
+	LOGI("    tmp: %d", tmp);
+	temp = tmp;
+	return 1;
+}
+
+int is_one_frame_end()
+{
+	int i,j=current_pos;
+	// 判断是否为结束标志（14个以上高电平）
+	short *buf = input;
+
+	for(i=0; i<18*16; i+=18)
+	{
+		if(buf[j+i] >= 24575) //32767-8192
+		{
+			j++;
+		}
+		else
+		{
+			return 0;
+		}
+		if(j>=14)
+		{
+			goto step2;
+		}
+	}
+
+step2:
+	for(; i<18*16; i+=18)
+	{
+		if(buf[j+i] <= -24576) //32767-8192
+		{
+			j++;
+		}
+		else
+		{
+			break;
+		}
+		if(j>=14)
+		{
+			LOGI("One frame end: %d",i+18);
+			return 1;
+		}
+	}
+}
+
+int find_start_point(int start, int end)
+{
+	LOGI("find_start_point");
 	LOGI("start at: %d  end at: %d", start, end);
 	int i=start,j=0,k=end/2;
 	signed short *buf = input;
 	for(;i<k;i+=18)
 	{
-		if(buf[i] > -8192 && buf[i] < 8192 )
+		if(buf[i] < -24576) //32768-8192
 		{
 			j++;
 		}
@@ -653,39 +754,71 @@ int find_head(int start, int end)
 		{
 			j=0;
 		}
-		if(j>=4)
+		if(j>=40)     
 		{
-			LOGI("Now pre start: %d",i);
-			return i;
+			LOGI("A frame start at: %d",i);
+			current_pos = i;
+			return 1;
 		}
 	}
-
-		
+	LOGI("Not found start point");
+	return 0;
 }
 
-int read_byte()
+
+int find_data_start(int start, int end)
 {
-	
+	LOGI("find_data_start");
+	LOGI("    start at: %d  end at: %d", start, end);
+	int i=start,j=0,k=end/2;
+	signed short *buf = input;
+	for(;i<k;i+=18)
+	{
+		if(buf[i] > 24575) //32767-8192
+		{
+			j++;
+		}
+		else
+		{
+			j=0;
+		}
+		if(j>=14) //2个0xFF，至少14位1
+		{
+			LOGI("A data start at: %d",i);
+			while(1)
+			{
+				i++;
+				if((buf[i] < -24576) && (buf[i+1] < -24576) && (buf[i+2] < -24576))
+					break;
+			}
+			current_pos = i;
+			return current_pos;
+		}
+	}
+	return 0;
 }
 
-int find_head_end(int start, int end)
+int find_aa_start(int start, int end)
 {
-	LOGI("find_head_end");
-	LOGI("start at: %d  end at: %d", start, end);
+	LOGI("find_aa_start");
 	int i=start,j=0,k=end/2;
 	signed short *buf = input;
 	int start_point;
 	
-	for(;i<k;i+=18)
+	for(;i<k;i++)
 	{
-		if(!(buf[i] & 1<<15) && (buf[i] & 1<<13))
+		if((buf[i] > 24575) && (buf[i+1] > 24575) && (buf[i+2] > 24575))
 		{
-			LOGI("Now head end at: %d",i);
+			LOGI("    0xaa start at: %d",i);
 			start_point = i;
-			break;
+			current_pos = i;
+			//找到0xaa起始位置，返回成功
+			return 1;//break;
 		}
 	}
 
+	return 0;
+#if 0
 	int c,m,n;
 	char temp[12];
 
@@ -693,35 +826,56 @@ int find_head_end(int start, int end)
 
 	for(i=start_point; i<k; i+=18)
 	{
-		//12字节其实标志
+		//12字节起始标志
 		for(m=0; m<12; m++)
 		{
-			for(n=7; n>=0;n--)
-			{
-				//为正数，且大于32767－8192
-				if(buf[i+9]>=8192)
-				{
-					temp[m] |= 1<<n;
-					test=1;
-				}
-				//为负数，且小于－32768＋8192
-				else if(buf[i+9]<=-8192)
-				{
-					temp[m] &= ~(1<<n);
-					test=0;
-				}
-				//在中间范围，无效数据，概率较小，其实在除起始之前的0v位置时刻外都为高或低，完全看符号位
-				else
-				{
-					test=3;
-				}
-				LOGI("i: %d--%d", i+9,test);
-				i+=18;
-			}
+			if(!is_one_frame_end())
+				read_byte(temp[m]);
 			LOGI("Step1 --> data[%d]: 0x%x", m, temp[m]);
 		}
- 	}
 		while(1);
+ 	}
+#endif
+}
+
+int analysis_data()
+{
+	char buffer[1024], temp[1024];
+	current_pos = 0;
+	int i;
+
+	while(current_pos < 44100*2*10)
+	{
+		int find = find_start_point(current_pos, 180000);
+		if(find) //找到起始长时间低电平
+		{
+			//找到0xaa起始位置
+			if(find_aa_start(current_pos,44100*2*10))
+			{
+				if(!find_data_start(current_pos,44100*2*10))
+				{
+					return -1;
+				}
+				else
+				{
+					do
+					{
+						if(!read_byte(temp[i]))
+							break;
+						i++;
+					}while(!is_one_frame_end());
+				}
+			}
+			else
+			{
+				return -1;
+			}
+		}
+		else
+		{
+			return -1;//失败
+		}
+	}
 }
 
 int test_readOneFrame()
@@ -758,7 +912,7 @@ for(;;)
 		LOGI("buf[%d]: %d", i, *(temp++));
 	}
 #endif
-		find_head(0,cur);
+		find_start_point(0,cur);
 }
 done:
      	close(my_audio_struct.fd_input);
@@ -858,11 +1012,7 @@ jint Java_com_thinpad_audiotransfer_AnalysisData_testReadData()
 	LOGI("Read input file success");
 	close(fd);
 
-	int i = find_head(0, 180000);
-	if(i)
-	{
-		find_head_end(i,180000-i);
-	}
+	analysis_data();
 }
 
 jint Java_com_thinpad_audiotransfer_AudiotransferActivity_testReadData()
