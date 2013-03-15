@@ -5,10 +5,10 @@ public class AnalysisData implements Runnable {
 	@Override
 	public void run() {
 		// TODO Auto-generated method stub
-		testReadData();
+		testReadFile();
 	}
 
-	public static native int testReadData();
+	public static native int testReadFile();
 	
 	static {
 		System.loadLibrary("transfer");

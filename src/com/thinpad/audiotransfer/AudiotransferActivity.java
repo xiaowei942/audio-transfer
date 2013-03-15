@@ -39,7 +39,7 @@ public class AudiotransferActivity extends Activity {
 		btn_readfile.setOnClickListener(listener);
 		
 		Thread trd = new Thread(analysisdata);
-		//trd.start();
+		trd.start();
 	}
 
 	public Button.OnClickListener listener = new OnClickListener() {
@@ -59,13 +59,13 @@ public class AudiotransferActivity extends Activity {
 				sendMessage("test".getBytes(), "test".getBytes().length);
 				break;
 			case R.id.btn_read:
-				testReadOneFrame();
+				testRecordData();
 				break;
 			case R.id.btn_save:
 				testSaveData();
 				break;
 			case R.id.btn_readfile:
-				testReadData();
+				testReadFile();
 				break;
 			default:
 				break;
@@ -78,9 +78,9 @@ public class AudiotransferActivity extends Activity {
 
 	public static native int testSend();
 	public static native int transferOneFrame();
-	public static native int testReadOneFrame();
+	public static native int testRecordData();
 	public static native int testSaveData();
-	public static native int testReadData();
+	public static native int testReadFile();
 	public static native int sendMessage(byte[] str, int length);
 	public static native int createThread();
 

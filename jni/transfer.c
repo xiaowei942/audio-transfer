@@ -197,7 +197,7 @@ int buffer_full = 0;
 
 char buffer[1024];
 char temp[1024];
-int test_readOneFrame();
+int test_recordData();
 
 int open_files(unsigned flags)
 {
@@ -592,59 +592,6 @@ void send_message(struct audio_struct *aud, const int count)
 	do_send(aud);
 }
 
-int test_doRec()
-{
-    struct wav_header hdr;
-    unsigned char buf[8192];
-    struct msm_audio_config cfg;
-    unsigned sz, n;
-    int fd, afd;
-    unsigned total = 0;
-    unsigned char tmp;
-    
-
-
-
-    if (ioctl(my_audio_struct.fd_input, AUDIO_START, 0)) {
-        perror("cannot start audio");
-        goto fail;
-    }
-
-    fcntl(0, F_SETFL, O_NONBLOCK);
-    fprintf(stderr,"\n*** RECORDING * HIT ENTER TO STOP ***\n");
-
-    for (;;) {
-        while (read(0, &tmp, 1) == 1) {
-            if ((tmp == 13) || (tmp == 10)) goto done;
-        }
-        if (read(afd, buf, sz) != sz) {
-            perror("cannot read buffer");
-            goto fail;
-        }
-        if (write(fd, buf, sz) != sz) {
-            perror("cannot write buffer");
-            goto fail;
-        }
-        total += sz;
-
-    }
-done:
-    close(my_audio_struct.fd_input);
-
-        /* update lengths in header */
-    hdr.data_sz = total;
-    hdr.riff_sz = total + 8 + 16 + 8;
-    lseek(fd, 0, SEEK_SET);
-    write(fd, &hdr, sizeof(hdr));
-    close(fd);
-    return 0;
-
-fail:
-    close(afd);
-    close(fd);
-    return -1;
-}
-
 int read_byte(char *temp)
 {
 	LOGI("read_byte --> current_pos: %d", current_pos);
@@ -915,7 +862,7 @@ start:
 	}
 }
 
-int test_readOneFrame()
+int test_recordData()
 {
 	signed char *buf = input;
     	unsigned total = 0, cur = 0,i;
@@ -927,30 +874,44 @@ int test_readOneFrame()
 
      	fcntl(0, F_SETFL, O_NONBLOCK);
      	fprintf(stderr,"\n*** RECORDING * HIT ENTER TO STOP ***\n");
-for(;;)
-{
-	if(total<44100*2*10)
-	{  
-		if (read(my_audio_struct.fd_input, buf+total, my_audio_struct.input_config.buffer_size*20) != my_audio_struct.input_config.buffer_size*20) 
-		{
-             		LOGE("cannot read buffer");
-             		goto fail;
-        	}
-		total += my_audio_struct.input_config.buffer_size*20;
-		cur = total;
-		buffered = total;
-	}
-
-#if 1
-	short *temp = input;
-
-	for(i=0;i<my_audio_struct.input_config.buffer_size*20/2;i++)
+	
+	//循环录制数据到缓冲区
+	for(;;)
 	{
-		LOGI("buf[%d]: %d", i, *(temp++));
+		if(total<44100*2*10)
+		{  
+			int diff = 44100*2*10-total;
+			if(diff < my_audio_struct.input_config.buffer_size*2)
+			{
+				if (read(my_audio_struct.fd_input, buf+total, diff) != diff) 
+				{
+             				LOGE("cannot read record buffer1");
+             				goto fail;
+        			}
+				else
+				{
+					total += my_audio_struct.input_config.buffer_size*2;
+					cur = total;
+					buffered = total;
+				}
+			}
+			else
+			{
+				if (read(my_audio_struct.fd_input, buf+total, my_audio_struct.input_config.buffer_size*2) != my_audio_struct.input_config.buffer_size*2) 
+				{
+             				LOGE("cannot read record buffer2");
+             				goto fail;
+        			}
+			}
+			total += my_audio_struct.input_config.buffer_size*2;
+			cur = total;
+			buffered = total;
+		}
+		else
+		{
+			goto done;
+		}
 	}
-#endif
-		find_start_point(0,cur);
-}
 done:
      	close(my_audio_struct.fd_input);
 
@@ -959,6 +920,185 @@ done:
 
 fail:
      	return -1;
+}
+
+int do_Rec()
+{
+    struct wav_header hdr;
+    unsigned char buf[8192];
+    struct msm_audio_config cfg;
+    unsigned sz, n;
+    int fd, afd;
+    unsigned total = 0;
+    unsigned char tmp;
+    
+    hdr.riff_id = ID_RIFF;
+    hdr.riff_sz = 0;
+    hdr.riff_fmt = ID_WAVE;
+    hdr.fmt_id = ID_FMT;
+    hdr.fmt_sz = 16;
+    hdr.audio_format = FORMAT_PCM;
+    hdr.num_channels = 1;
+    hdr.sample_rate = 44100;
+    hdr.byte_rate = hdr.sample_rate * hdr.num_channels * 2;
+    hdr.block_align = hdr.num_channels * 2;
+    hdr.bits_per_sample = 16;
+    hdr.data_id = ID_DATA;
+    hdr.data_sz = 0;
+
+    fd = open("/sdcard/out.txt", O_CREAT | O_RDWR, 0666);
+    if (fd < 0) {
+        perror("cannot open output file");
+        return -1;
+    }
+    write(fd, &hdr, sizeof(hdr));
+
+    afd = open("/dev/msm_pcm_in", O_RDWR);
+    if (afd < 0) {
+        perror("cannot open msm_pcm_in");
+        close(fd);
+        return -1;
+    }
+
+    printf("RIFF_ID2: 0x%x\n",hdr.riff_id);
+        /* config change should be a read-modify-write operation */
+    if (ioctl(afd, AUDIO_GET_CONFIG, &cfg)) {
+        perror("cannot read audio config");
+        goto fail;
+    }
+
+    printf("RIFF_ID3: 0x%x\n",hdr.riff_id);
+    cfg.channel_count = hdr.num_channels;
+    cfg.sample_rate = hdr.sample_rate;
+    if (ioctl(afd, AUDIO_SET_CONFIG, &cfg)) {
+        perror("cannot write audio config");
+        goto fail;
+    }
+
+    printf("RIFF_ID4: 0x%x\n",hdr.riff_id);
+    if (ioctl(afd, AUDIO_GET_CONFIG, &cfg)) {
+        perror("cannot read audio config");
+        goto fail;
+    }
+
+    sz = cfg.buffer_size;
+    fprintf(stderr,"buffer size %d x %d\n", sz, cfg.buffer_count);
+    if (sz > sizeof(buf)) {
+        fprintf(stderr,"buffer size %d too large\n", sz);
+        goto fail;
+    }
+
+    if (ioctl(afd, AUDIO_START, 0)) {
+        perror("cannot start audio");
+        goto fail;
+    }
+
+    fcntl(0, F_SETFL, O_NONBLOCK);
+    fprintf(stderr,"\n*** RECORDING * HIT ENTER TO STOP ***\n");
+
+    for (;;) {
+        while (read(0, &tmp, 1) == 1) {
+            if ((tmp == 13) || (tmp == 10))
+	    {
+		   printf("Now Done\n");
+		   goto done;
+	    }
+        }
+        if (read(afd, buf, sz) != sz) {
+            perror("cannot read buffer");
+            goto fail;
+        }
+        if (write(fd, buf, sz) != sz) {
+            perror("cannot write buffer");
+            goto fail;
+        }
+        total += sz;
+	printf("total = %d\n",total);
+
+    }
+done:
+    printf("Exit record with total = %d\n",total);
+    close(afd);
+
+        /* update lengths in header */
+    printf("RIFF_ID: 0x%x\n",hdr.riff_id);
+    int *temp = (int *) (&hdr);
+    int i;
+    for (i=0;i<11;i++)
+    	printf("--> 0x%x\n",*(temp++));
+
+    /////  ADD BY WEI  /////
+    hdr.riff_id = ID_RIFF;
+    
+    hdr.data_sz = total;
+    hdr.riff_sz = total + 8 + 16 + 8;
+    lseek(fd, 0, SEEK_SET);
+    int ret_val = write(fd, &hdr, sizeof(hdr));
+    printf("ret_val = %a\n",ret_val);
+    printf("Now close wav file\n");
+    close(fd);
+    printf("Done~\n");
+    return 0;
+
+fail:
+    printf("Failed~\n");
+    close(afd);
+    close(fd);
+    return -1;
+}
+
+int test_doRec()
+{
+    LOGI("test_doRec");
+    struct wav_header hdr;
+    unsigned char buf[8192];
+    struct msm_audio_config cfg;
+    unsigned sz, n;
+    int fd, afd;
+    unsigned total = 0;
+    unsigned char tmp;
+    
+
+
+
+    if (ioctl(my_audio_struct.fd_input, AUDIO_START, 0)) {
+        perror("cannot start audio");
+        goto fail;
+    }
+
+    fcntl(0, F_SETFL, O_NONBLOCK);
+    fprintf(stderr,"\n*** RECORDING * HIT ENTER TO STOP ***\n");
+
+    for (;;) {
+        while (read(0, &tmp, 1) == 1) {
+            if ((tmp == 13) || (tmp == 10)) goto done;
+        }
+        if (read(afd, buf, sz) != sz) {
+            perror("cannot read buffer");
+            goto fail;
+        }
+        if (write(fd, buf, sz) != sz) {
+            perror("cannot write buffer");
+            goto fail;
+        }
+        total += sz;
+
+    }
+done:
+    close(my_audio_struct.fd_input);
+
+        /* update lengths in header */
+    hdr.data_sz = total;
+    hdr.riff_sz = total + 8 + 16 + 8;
+    lseek(fd, 0, SEEK_SET);
+    write(fd, &hdr, sizeof(hdr));
+    close(fd);
+    return 0;
+
+fail:
+    close(afd);
+    close(fd);
+    return -1;
 }
 
 jint Java_com_thinpad_audiotransfer_AudiotransferActivity_unitInit(JNIEnv *env, jobject thiz, jint play_rate, jint play_channels, jint rec_rate, jint rec_channels, jint flags)
@@ -1005,11 +1145,10 @@ jint Java_com_thinpad_audiotransfer_AudiotransferActivity_sendMessage(JNIEnv *en
 	return 0;
 }
 
-jint Java_com_thinpad_audiotransfer_AudiotransferActivity_testReadOneFrame()
+jint Java_com_thinpad_audiotransfer_AudiotransferActivity_testRecordData()
 {
-	can_read = 1;
-	buffer_full = 0;
-	//test_readOneFrame();
+	//test_recordData();
+	do_Rec();
 }
 
 jint Java_com_thinpad_audiotransfer_AudiotransferActivity_testSaveData()
@@ -1027,16 +1166,14 @@ jint Java_com_thinpad_audiotransfer_AudiotransferActivity_testSaveData()
 	close(fd);
 }
 
-jint Java_com_thinpad_audiotransfer_AnalysisData_testReadData()
+jint Java_com_thinpad_audiotransfer_AnalysisData_testReadFile()
 {
-	LOGI("Now waitting for start signal");
-	while(1)
-	{
-		if(can_read)
-			break;
-	}
 
-	int fd = open("/sdcard/out.txt", O_RDONLY);
+}
+
+jint Java_com_thinpad_audiotransfer_AudiotransferActivity_testReadFile()
+{	
+	int fd = open("/sdcard/in.txt", O_RDONLY);
 	if (fd < 0) {
          	LOGE("cannot open in file");
         	return -1;
@@ -1054,15 +1191,9 @@ jint Java_com_thinpad_audiotransfer_AnalysisData_testReadData()
 	return 1;
 }
 
-jint Java_com_thinpad_audiotransfer_AudiotransferActivity_testReadData()
-{	
-	can_read = 1;
-	Java_com_thinpad_audiotransfer_AnalysisData_testReadData();
-}
-
 jint Java_com_thinpad_audiotransfer_AudiotransferActivity_createThread()
 {
-	pthread_create(NULL, NULL, &test_readOneFrame, NULL);
+	pthread_create(NULL, NULL, &test_recordData, NULL);
 	LOGI("Read thread create success");
 }
 
