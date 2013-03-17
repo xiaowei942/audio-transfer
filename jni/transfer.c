@@ -177,7 +177,7 @@ char tail_in[] = {
 #define BUF_LEN DATA_LEN/2
 
 #define HIGH_GATE 32767-8192
-#define LOW_GATE -3276+8192
+#define LOW_GATE -32767+8192
 
 char input[DATA_LEN];
 char output[480000]; //实际输出数据
@@ -654,6 +654,7 @@ int read_byte(char *temp)
 
 	temp = tmp;
 	pos=current_pos;
+	LOGI("    tmp: %d",temp);
 
 	while(1)
 	{
@@ -667,6 +668,8 @@ int read_byte(char *temp)
 		// 数据起始标志后，如果18个数据还没到数据位起始位置，则出错
 		if((j-pos)>22)
 		{
+			if(is_one_frame_end())
+				return 1;
 			LOGI("    -->no start bit - %d", j);
 			return 0;
 		}
@@ -674,7 +677,6 @@ int read_byte(char *temp)
 		j++;
 	}
 
-	LOGI("    tmp: %d",temp);
 	return 1;
 }
 
@@ -682,24 +684,24 @@ int is_one_frame_end()
 {
 	LOGI("is_one_frame_end --> current_pos: %d" ,current_pos);
 
-	int i,j=current_pos;
+	int i=0,j=current_pos,k=0;
 	short *buf = input;
 
 	
 	// 抽样后三十个数据位，判断是否为结束标志（阶段1，14个以上高电平）
-	for(i=0; i<18*30; i+=18)
+	for(i=0; i<18*3*10; i++)
 	{
-		if(buf[j+i] >= HIGH_GATE) //32767-8192
+		if(buf[j+i] > -8192) //32767-8192
 		{
-			j++;
+			k++;
 		}
 		else
 		{
-			j=0;
+			k=0;
 		}
 	}
 
-	if(j>=14)
+	if(k>=18*3*8)
 	{
 		goto step2;
 	}
@@ -710,26 +712,27 @@ int is_one_frame_end()
 	}
 
 step2:
-	
+	k=0;
 	// 抽样后三十个数据位，判断是否为结束标志（阶段2，14个以上低电平）
-	for(; i<18*30; i+=18)
+	for(; i<18*3*18; i++)
 	{
-		if(buf[j+i] <= LOW_GATE) //32767-8192
+		if(buf[j+i] <= -8192) //32767-8192
 		{
-			j++;
+			k++;
 		}
 		else
 		{
-			j=0;
+			k=0;
 		}
 	}
-	if(j>=14)
+	if(k>=18*3*4)
 	{
 		LOGI("    --> One frame end: %d",i+18);
 		return 1;
 	}
 	else
 	{
+		LOGI("    --> k: %d  current_pos: %d", k, current_pos+i);
 		LOGI("    --> Not one frame end-2");
 		return 0;
 	}
@@ -742,7 +745,7 @@ int find_start_point(int start, int end)
 	signed short *buf = input;
 	for(;i<k;i+=18)
 	{
-		if(buf[i] < LOW_GATE) //32768-8192
+		if(buf[i] < 8192 && buf[i] > -8192) 
 		{
 			j++;
 		}
@@ -767,7 +770,7 @@ int find_data_start(int start, int end)
 	LOGI("find_data_start --> start at: %d  end at: %d", start, end);
 	int i=start,j=0,k=end;
 	signed short *buf = input;
-	for(;i<k;i+=18)
+	for(;i<k;i++)
 	{
 		if(buf[i] > HIGH_GATE) //32767-8192
 		{
@@ -777,7 +780,7 @@ int find_data_start(int start, int end)
 		{
 			j=0;
 		}
-		if(j>=14) //2个0xFF，至少14位1
+		if(j>=18*8) //2个0xFF，至少14位1
 		{
 			while(1)
 			{
@@ -790,7 +793,7 @@ int find_data_start(int start, int end)
 			return current_pos;
 		}
 	}
-	//LOGI("    --> find_data_start failed (end at %d)", i);
+	LOGI("    --> find_data_start failed (end at %d)", i);
 	return 0;
 }
 
