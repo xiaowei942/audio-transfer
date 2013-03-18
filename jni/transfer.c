@@ -11,6 +11,7 @@
 #include <linux/ioctl.h>
 #include <sys/time.h>
 #include <time.h>
+#include <string.h> 
 
 #include <jni.h>
 #include <android/log.h>
@@ -830,11 +831,15 @@ int find_aa_start(int start, int end)
 	return 0;
 }
 
-int analysis_data()
+int analysis_data(int timeout)
 {
 	current_pos = 0;
 	int i=0, success=0, frames=0;
-	
+
+	struct timeval tv_start;
+	gettimeofday(&tv_start, NULL);
+	printf("time-start %u:%u\n", tv_start.tv_sec, tv_start.tv_usec);
+
 	while(current_pos < BUF_LEN)
 	{
 		int find=0;
@@ -867,6 +872,8 @@ start:
 						i++;
 					}while(!is_one_frame_end());
 					LOGI("BYTES: %d", i);
+					if(findchars())
+						return success;
 				}
 			}
 			else
@@ -1209,10 +1216,6 @@ jint Java_com_thinpad_audiotransfer_AudiotransferActivity_testReadFile()
 	LOGI("Read input file success");
 	close(fd);
 #endif	
-	
-	struct timeval tv_start;
-	gettimeofday(&tv_start, NULL);
-	printf("time-start %u:%u\n", tv_start.tv_sec, tv_start.tv_usec);
 
 	int ret = analysis_data();
 	
