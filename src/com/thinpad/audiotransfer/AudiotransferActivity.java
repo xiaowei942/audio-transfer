@@ -1,10 +1,15 @@
 package com.thinpad.audiotransfer;
 
+import java.text.SimpleDateFormat;
+import java.util.Calendar;
+import java.util.Date;
+
 import android.app.Activity;
 import android.os.Bundle;
 import android.view.View;
 import android.view.View.OnClickListener;
 import android.widget.Button;
+import android.text.format.Time;
 import android.util.Log;
 
 public class AudiotransferActivity extends Activity {
@@ -65,7 +70,13 @@ public class AudiotransferActivity extends Activity {
 				testSaveData();
 				break;
 			case R.id.btn_readfile:
+				Date dt= new Date();
+				  Long time= dt.getTime();//这就是距离1970年1月1日0点0分0秒的毫秒数
+				  System.out.println(System.currentTimeMillis());//与上面的相同
 				testReadFile();
+				Date dt2= new Date();
+				  Long time2= dt2.getTime();//这就是距离1970年1月1日0点0分0秒的毫秒数
+				  System.out.println(System.currentTimeMillis());//与上面的相同
 				break;
 			default:
 				break;

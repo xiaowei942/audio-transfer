@@ -9,6 +9,8 @@
 #include <errno.h>
 #include <sys/ioctl.h>
 #include <linux/ioctl.h>
+#include <sys/time.h>
+#include <time.h>
 
 #include <jni.h>
 #include <android/log.h>
@@ -18,7 +20,7 @@
 #define INPUT_DEVNAME "/dev/msm_pcm_in"
 #define OUTPUT_DEVNAME "/dev/msm_pcm_out"
 
-#define __DEBUG
+//#define __DEBUG
 #define LOG_TAG "WEI:jni "
 
 #ifdef __DEBUG
@@ -482,13 +484,25 @@ int test_transferOneFrame()
 	test_do_command();
 }
 
-int make_message(char *dest, char *msg, int msg_len)
+int make_message(char *dest, unsigned char *msg, int msg_len)
 {
 	LOGI("make_message");
 
 	memcpy(dest, head_out, head_len);
-	memcpy(dest+head_len, msg,msg_len);
-	memcpy(dest+head_len+msg_len, tail_out, tail_len);
+	memcpy(dest+head_len, msg, msg_len);
+	
+	// 构造校验字节
+	int i;
+	for(i=0; i<msg_len; i++)
+	{
+		msg[i] = ~msg[i];
+	}
+	
+	// 加入校验字节
+	memcpy(dest+head_len+msg_len, msg, msg_len);
+
+	// 写入消息尾
+	memcpy(dest+head_len+2*msg_len, tail_out, tail_len);
 
 #if 1	
 	LOGI("head_len:%d",head_len);
@@ -652,9 +666,9 @@ int read_byte(char *temp)
 		return 0;
 	}
 
-	temp = tmp;
+	*temp = tmp;
 	pos=current_pos;
-	LOGI("    tmp: %d",temp);
+	LOGI("    tmp: %d", *temp);
 
 	while(1)
 	{
@@ -724,18 +738,17 @@ step2:
 		{
 			k=0;
 		}
+		
+		if(k>=18*3*4)
+		{
+			LOGI("    --> One frame end: %d",i+18);
+			return 1;
+		}
 	}
-	if(k>=18*3*4)
-	{
-		LOGI("    --> One frame end: %d",i+18);
-		return 1;
-	}
-	else
-	{
-		LOGI("    --> k: %d  current_pos: %d", k, current_pos+i);
-		LOGI("    --> Not one frame end-2");
-		return 0;
-	}
+	
+	LOGI("    --> k: %d  current_pos: %d", k, current_pos+i);
+	LOGI("    --> Not one frame end-2");
+	return 0;
 }
 
 int find_start_point(int start, int end)
@@ -821,7 +834,7 @@ int analysis_data()
 {
 	current_pos = 0;
 	int i=0, success=0, frames=0;
-
+	
 	while(current_pos < BUF_LEN)
 	{
 		int find=0;
@@ -842,19 +855,25 @@ start:
 					//循环读取字节数据，有错误，重新开始下一frame数据分析
 					do
 					{
-						if(!read_byte(temp[i]))
+						if(BUF_LEN-current_pos < 18*26)
+						{
+							LOGI("no enough datas, success: %d",success);
+							return success;
+						}
+						if(!read_byte(&temp[i]))
 						{
 							goto start;
 						}
 						i++;
 					}while(!is_one_frame_end());
+					LOGI("BYTES: %d", i);
 				}
 			}
 			else
 			{
 				return success;
 			}
-			success = frames+i;
+			success = i;
 		}
 		else
 		{
@@ -1130,8 +1149,8 @@ jint Java_com_thinpad_audiotransfer_AudiotransferActivity_sendMessage(JNIEnv *en
 	GET_ARRAY_LEN(head_out,head_len);
 	GET_ARRAY_LEN(tail_out,tail_len);
 
-	//计算总消息长度
-	sum = head_len + tail_len + msg_len;
+	//计算总消息长度,消息长度＊2为了校验
+	sum = head_len + tail_len + msg_len*2;
 
 	char *buf;
 	buf = (char *)malloc(sum);
@@ -1150,8 +1169,8 @@ jint Java_com_thinpad_audiotransfer_AudiotransferActivity_sendMessage(JNIEnv *en
 
 jint Java_com_thinpad_audiotransfer_AudiotransferActivity_testRecordData()
 {
-	//test_recordData();
-	do_Rec();
+	test_recordData();
+	//do_Rec();
 }
 
 jint Java_com_thinpad_audiotransfer_AudiotransferActivity_testSaveData()
@@ -1176,6 +1195,7 @@ jint Java_com_thinpad_audiotransfer_AnalysisData_testReadFile()
 
 jint Java_com_thinpad_audiotransfer_AudiotransferActivity_testReadFile()
 {	
+#if 0
 	int fd = open("/sdcard/in.txt", O_RDONLY);
 	if (fd < 0) {
          	LOGE("cannot open in file");
@@ -1188,10 +1208,24 @@ jint Java_com_thinpad_audiotransfer_AudiotransferActivity_testReadFile()
         }
 	LOGI("Read input file success");
 	close(fd);
- 	
+#endif	
+	
+	struct timeval tv_start;
+	gettimeofday(&tv_start, NULL);
+	printf("time-start %u:%u\n", tv_start.tv_sec, tv_start.tv_usec);
+
 	int ret = analysis_data();
-	printf("ret: %s", ret);
-	return 1;
+	
+	struct timeval tv_end;
+	gettimeofday(&tv_end, NULL);
+	printf("time-end %u:%u\n", tv_end.tv_sec, tv_end.tv_usec);
+	
+	int j;
+	for(j=0; j<ret; j++)
+	{
+		LOGI("temp[%d] = %d", j, temp[j]);
+	}
+	return ret;
 }
 
 jint Java_com_thinpad_audiotransfer_AudiotransferActivity_createThread()
