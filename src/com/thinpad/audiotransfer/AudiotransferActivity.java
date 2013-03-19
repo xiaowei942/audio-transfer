@@ -1,17 +1,10 @@
 package com.thinpad.audiotransfer;
 
-import java.text.SimpleDateFormat;
-import java.util.Calendar;
-import java.util.Date;
-
-import android.R.integer;
 import android.app.Activity;
 import android.os.Bundle;
 import android.view.View;
 import android.view.View.OnClickListener;
 import android.widget.Button;
-import android.text.format.Time;
-import android.util.Log;
 
 public class AudiotransferActivity extends Activity {
 	@Override
@@ -59,15 +52,8 @@ public class AudiotransferActivity extends Activity {
 			case R.id.btn_init:
 				unitInit(44100, 1, 44100, 2, (OUTPUT_FLAG | INPUT_FLAG));
 				break;
-			case R.id.btn_play:
-				//testSend();
-				transferOneFrame();
-				break;
 			case R.id.btn_send:
 				sendMessage("test".getBytes(), "test".getBytes().length);
-				break;
-			case R.id.btn_read:
-				testRecordData();
 				break;
 			case R.id.btn_save:
 				//testSaveData();
@@ -84,15 +70,6 @@ public class AudiotransferActivity extends Activity {
 				
 					
 				break;
-			case R.id.btn_readfile:
-				Date dt = new Date();
-				  Long time = dt.getTime();//这就是距离1970年1月1日0点0分0秒的毫秒数
-				  System.out.println(System.currentTimeMillis());//与上面的相同
-				testReadFile();
-				Date dt2 = new Date();
-				  Long time2 = dt2.getTime();//这就是距离1970年1月1日0点0分0秒的毫秒数
-				  System.out.println(System.currentTimeMillis());//与上面的相同
-				break;
 			default:
 				break;
 			}
@@ -102,14 +79,8 @@ public class AudiotransferActivity extends Activity {
 	public static native int unitInit(int play_rate, int play_channels,
 			int rec_rate, int rec_channels, int flags);
 	public static native void unitDestroy();
-	public static native int testSend();
-	public static native int transferOneFrame();
-	public static native int testRecordData();
-	public static native int testSaveData();
-	public static native int testReadFile();
 	public static native int receiveData(byte[] recv, int timeout);
 	public static native int sendMessage(byte[] str, int length);
-	public static native int createThread();
 
 	static {
 		System.loadLibrary("transfer");
