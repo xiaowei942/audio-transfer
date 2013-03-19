@@ -9,12 +9,6 @@
         android:layout_width="fill_parent"
         android:layout_height="wrap_content"
         android:text="初始化设备" />
-
-    <Button 
-        android:id="@+id/btn_play"
-        android:layout_width="fill_parent"
-        android:layout_height="wrap_content"
-        android:text="播放声音" />
     
     <Button 
         android:id="@+id/btn_send"
@@ -23,21 +17,10 @@
         android:text="发送消息" />
     
     <Button 
-        android:id="@+id/btn_read"
-        android:layout_width="fill_parent"
-        android:layout_height="wrap_content"
-        android:text="录制（读取）数据" />
-    
-    <Button 
         android:id="@+id/btn_save"
         android:layout_width="fill_parent"
         android:layout_height="wrap_content"
-        android:text="保存数据" />
+        android:text="接收数据" />
     
-    <Button
-        android:id="@+id/btn_readfile"
-        android:layout_width="fill_parent"
-        android:layout_height="wrap_content"
-        android:text="读取文件" />
     
 </LinearLayout>

@@ -19,28 +19,19 @@ public class AudiotransferActivity extends Activity {
 	public static final int OUTPUT_FLAG = 2;
 
 	private Button btn_init;
-	private Button btn_play;
 	private Button btn_send;
-	private Button btn_read;
 	private Button btn_save;
-	private Button btn_readfile;
 	
 	@Override
 	public void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
 		setContentView(R.layout.main);
 		btn_init = (Button) findViewById(R.id.btn_init);
-		btn_play = (Button) findViewById(R.id.btn_play);
 		btn_send = (Button) findViewById(R.id.btn_send);
-		btn_read = (Button) findViewById(R.id.btn_read);
 		btn_save = (Button) findViewById(R.id.btn_save);
-		btn_readfile = (Button) findViewById(R.id.btn_readfile);
 		btn_init.setOnClickListener(listener);
-		btn_play.setOnClickListener(listener);
 		btn_send.setOnClickListener(listener);
-		btn_read.setOnClickListener(listener);
 		btn_save.setOnClickListener(listener);
-		btn_readfile.setOnClickListener(listener);
 	}
 
 	public Button.OnClickListener listener = new OnClickListener() {
@@ -53,7 +44,7 @@ public class AudiotransferActivity extends Activity {
 				unitInit(44100, 1, 44100, 2, (OUTPUT_FLAG | INPUT_FLAG));
 				break;
 			case R.id.btn_send:
-				sendMessage("test".getBytes(), "test".getBytes().length);
+				sendMessage("t".getBytes(), "t".getBytes().length);
 				break;
 			case R.id.btn_save:
 				//testSaveData();
@@ -67,8 +58,6 @@ public class AudiotransferActivity extends Activity {
 					System.out.println("接收异常");
 				} else  //返回 -1
 					System.out.println("超时");
-				
-					
 				break;
 			default:
 				break;
