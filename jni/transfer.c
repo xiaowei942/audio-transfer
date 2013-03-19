@@ -27,11 +27,11 @@
 #ifdef __DEBUG
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,LOG_TAG,__VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR,LOG_TAG,__VA_ARGS__)
-#define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)a
+#define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
 #else
 #define LOGI(...) 
 #define LOGE(...) 
-#define LOGD(...) 
+#define LOGD(...)__android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
 #endif
 #define AUDIO_IOCTL_MAGIC 'a'
 
@@ -176,7 +176,9 @@ char tail_in[] = {
 	0xff,0xff,0xff,0xff
 };
 
-#define DATA_LEN 44100*2*10 //单声道，44100采样，16位精度，10秒
+#define SECONDS 10 //10秒
+#define DATA_LEN_1S 44100*2 	//单声道，44100采样，16位精度
+#define DATA_LEN DATA_LEN_1S*SECONDS
 #define BUF_LEN DATA_LEN/2
 
 #define HIGH_GATE 32767-8192
@@ -200,6 +202,7 @@ int buffer_full = 0;
 
 char buffer[1024];
 char temp[1024];
+char buf_out[1024];
 int test_recordData();
 
 int open_files(unsigned flags)
@@ -831,64 +834,175 @@ int find_aa_start(int start, int end)
 	return 0;
 }
 
-int analysis_data(int timeout)
+int find_chars(const char *in, char *out, int count)
 {
+	LOGD("find_chars");
+
+	int a=0, b=0, i=0;
+
+	for(i=0; i<count; i++)
+	{
+		if(in[i] == 1 && in[i-1] == 0)
+		{
+			a = i;
+			break;
+		}
+	}
+
+	for(; i<count; i++)
+	{
+		if(in[i] == 255 && in[i-1] == 254)
+		{
+			b = i-1;
+			break;
+		}
+	}
+
+	LOGD("    --> a: %d   b: %d  i: %d", a, b, i);
+
+	if((b-a) >= 2 && (b-a) <= 253 )
+	{
+		LOGD("    --> find chars");
+		memcpy(out, &in[a+1], b-a-1);
+		return b-a-1;
+	}
+	else
+	{
+		LOGD("    --> not find");
+		return 0;
+	}
+}
+
+int analysis_data(int start, int end)
+{
+	LOGD("analysis_data start:  %d    end: %d",start,end);
 	current_pos = 0;
 	int i=0, success=0, frames=0;
 
-	struct timeval tv_start;
-	gettimeofday(&tv_start, NULL);
-	printf("time-start %u:%u\n", tv_start.tv_sec, tv_start.tv_usec);
-
-	while(current_pos < BUF_LEN)
+	while(current_pos < end)
 	{
 		int find=0;
 start:
-		find = find_start_point(current_pos, BUF_LEN);
+		find = find_start_point(current_pos, end);
 		if(find) //找到起始长时间低电平
 		{
 			frames++;
 			//找到0xaa起始位置
-			if(find_aa_start(current_pos,BUF_LEN))
+			if(find_aa_start(current_pos,end))
 			{
-				if(!find_data_start(current_pos,BUF_LEN))
+				if(!find_data_start(current_pos,end))
 				{
-					return success;
+					return 0;
 				}
 				else
 				{
 					//循环读取字节数据，有错误，重新开始下一frame数据分析
 					do
 					{
-						if(BUF_LEN-current_pos < 18*26)
+						if(end-current_pos < 18*26)
 						{
 							LOGI("no enough datas, success: %d",success);
-							return success;
+							return 0;
 						}
 						if(!read_byte(&temp[i]))
 						{
+							i=0;
 							goto start;
 						}
 						i++;
+						if(i==256)
+							break;
 					}while(!is_one_frame_end());
-					LOGI("BYTES: %d", i);
-					if(findchars())
-						return success;
+
+					int ret;
+					if(ret = find_chars(temp, buf_out, i))
+					{
+						return ret; //如果查找成功，
+					}
+					else
+					{
+						i=0;
+						goto start;
+					}
 				}
 			}
 			else
 			{
-				return success;
+				return 0;
 			}
-			success = i;
 		}
 		else
 		{
-			LOGI("frames: %d", frames);
-			LOGI("success: %d", success);
-			return success;
+			return 0;
 		}
 	}
+}
+
+int receive(int timeout)
+{
+	LOGI("receive");
+
+	int i, ret, total=0;
+	signed char *buf = input;
+	int count = DATA_LEN/(my_audio_struct.input_config.buffer_size*20);
+
+	if (ioctl(my_audio_struct.fd_input, AUDIO_START, 0)) {
+         	perror("cannot start audio");
+        	goto fail;
+     	}
+
+     	fcntl(0, F_SETFL, O_NONBLOCK);
+
+	struct timeval tv_start;
+	gettimeofday(&tv_start, NULL);
+	LOGD("time-start %u:%u\n", tv_start.tv_sec, tv_start.tv_usec);
+
+	LOGD("    --> count: %d", count);
+	for(i=0; i<count; i++)
+	{
+		struct timeval tv_end;
+		gettimeofday(&tv_end, NULL);
+		LOGD("time-end %u:%u\n", tv_end.tv_sec, tv_end.tv_usec);
+
+		//超时退出
+		if(tv_end.tv_sec-tv_start.tv_sec > timeout)
+		{
+			LOGD("timeout");
+			goto timeout;
+		}
+	
+		if (read(my_audio_struct.fd_input, buf+total, my_audio_struct.input_config.buffer_size*20) != my_audio_struct.input_config.buffer_size*20) 
+		{
+             		LOGE("cannot record to buffer");
+           		goto fail;
+        	}
+		total += my_audio_struct.input_config.buffer_size*20;
+
+		//分析数据
+		ret = analysis_data(0,total/2);
+
+		if(ret > 0)
+		{
+			goto success;
+		}
+		else if(ret == 0)
+		{
+			LOGD("    --> continue");
+			continue;
+		}
+	}
+
+fail:
+	ret = 0;	
+	ioctl(my_audio_struct.fd_input, AUDIO_STOP, 0);
+	//close(my_audio_struct.fd_input);
+	return ret;
+timeout:
+	ret = -1;
+success:
+	ioctl(my_audio_struct.fd_input, AUDIO_STOP, 0);
+	//close(my_audio_struct.fd_input);
+	return ret;
 }
 
 int test_recordData()
@@ -902,7 +1016,6 @@ int test_recordData()
      	}
 
      	fcntl(0, F_SETFL, O_NONBLOCK);
-     	fprintf(stderr,"\n*** RECORDING * HIT ENTER TO STOP ***\n");
 	
 	//循环录制数据到缓冲区
 	for(;;)
@@ -912,17 +1025,7 @@ int test_recordData()
 			int diff = 44100*2*10-total;
 			if(diff < my_audio_struct.input_config.buffer_size*2)
 			{
-				if (read(my_audio_struct.fd_input, buf+total, diff) != diff) 
-				{
-             				LOGE("cannot read record buffer1");
-             				goto fail;
-        			}
-				else
-				{
-					total += my_audio_struct.input_config.buffer_size*2;
-					cur = total;
-					buffered = total;
-				}
+				break;
 			}
 			else
 			{
@@ -942,6 +1045,7 @@ int test_recordData()
 		}
 	}
 done:
+	ioctl(my_audio_struct.fd_input, AUDIO_STOP, 0);
      	close(my_audio_struct.fd_input);
 
         /* update lengths in header */
@@ -1195,9 +1299,20 @@ jint Java_com_thinpad_audiotransfer_AudiotransferActivity_testSaveData()
 	close(fd);
 }
 
-jint Java_com_thinpad_audiotransfer_AnalysisData_testReadFile()
+jint Java_com_thinpad_audiotransfer_AudiotransferActivity_receiveData(JNIEnv *env, jobject thiz, jbyteArray recv, int timeout)
 {
+	int ret = receive(timeout);
+	jbyte* tmp = (*env)->GetByteArrayElements(env,recv,JNI_FALSE);
+	if(ret > 0)
+	{
+		memcpy(tmp, buf_out, ret);
+	}
+	return ret;
+}
 
+jint Java_com_thinpad_audiotransfer_AudiotransferActivity_receive()
+{	
+	
 }
 
 jint Java_com_thinpad_audiotransfer_AudiotransferActivity_testReadFile()
@@ -1217,16 +1332,12 @@ jint Java_com_thinpad_audiotransfer_AudiotransferActivity_testReadFile()
 	close(fd);
 #endif	
 
-	int ret = analysis_data();
-	
-	struct timeval tv_end;
-	gettimeofday(&tv_end, NULL);
-	printf("time-end %u:%u\n", tv_end.tv_sec, tv_end.tv_usec);
+	int ret = receive(9);
 	
 	int j;
 	for(j=0; j<ret; j++)
 	{
-		LOGI("temp[%d] = %d", j, temp[j]);
+		LOGD("buf_out[%d] = %d", j, buf_out[j]);
 	}
 	return ret;
 }

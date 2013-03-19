@@ -4,6 +4,7 @@ import java.text.SimpleDateFormat;
 import java.util.Calendar;
 import java.util.Date;
 
+import android.R.integer;
 import android.app.Activity;
 import android.os.Bundle;
 import android.view.View;
@@ -67,15 +68,27 @@ public class AudiotransferActivity extends Activity {
 				testRecordData();
 				break;
 			case R.id.btn_save:
-				testSaveData();
+				//testSaveData();
+				byte[] tmp = new byte[1024];
+				int ret = receiveData(tmp,5);
+				if(ret>0){
+					for(int i=0; i<ret; i++){
+						System.out.println(tmp[i]);
+					}
+				} else if(ret==0){
+					System.out.println("接收异常");
+				} else  //返回 -1
+					System.out.println("超时");
+				
+					
 				break;
 			case R.id.btn_readfile:
-				Date dt= new Date();
-				  Long time= dt.getTime();//这就是距离1970年1月1日0点0分0秒的毫秒数
+				Date dt = new Date();
+				  Long time = dt.getTime();//这就是距离1970年1月1日0点0分0秒的毫秒数
 				  System.out.println(System.currentTimeMillis());//与上面的相同
 				testReadFile();
-				Date dt2= new Date();
-				  Long time2= dt2.getTime();//这就是距离1970年1月1日0点0分0秒的毫秒数
+				Date dt2 = new Date();
+				  Long time2 = dt2.getTime();//这就是距离1970年1月1日0点0分0秒的毫秒数
 				  System.out.println(System.currentTimeMillis());//与上面的相同
 				break;
 			default:
@@ -92,6 +105,7 @@ public class AudiotransferActivity extends Activity {
 	public static native int testRecordData();
 	public static native int testSaveData();
 	public static native int testReadFile();
+	public static native int receiveData(byte[] recv, int timeout);
 	public static native int sendMessage(byte[] str, int length);
 	public static native int createThread();
 
