@@ -14,6 +14,13 @@ import android.text.format.Time;
 import android.util.Log;
 
 public class AudiotransferActivity extends Activity {
+	@Override
+	protected void onDestroy() {
+		// TODO Auto-generated method stub
+		unitDestroy();
+		super.onDestroy();
+	}
+
 	/** Called when the activity is first created. */
 	public static final int INPUT_FLAG = 1;
 	public static final int OUTPUT_FLAG = 2;
@@ -24,8 +31,6 @@ public class AudiotransferActivity extends Activity {
 	private Button btn_read;
 	private Button btn_save;
 	private Button btn_readfile;
-
-	AnalysisData analysisdata = new AnalysisData();
 	
 	@Override
 	public void onCreate(Bundle savedInstanceState) {
@@ -43,9 +48,6 @@ public class AudiotransferActivity extends Activity {
 		btn_read.setOnClickListener(listener);
 		btn_save.setOnClickListener(listener);
 		btn_readfile.setOnClickListener(listener);
-		
-		Thread trd = new Thread(analysisdata);
-		trd.start();
 	}
 
 	public Button.OnClickListener listener = new OnClickListener() {
@@ -99,7 +101,7 @@ public class AudiotransferActivity extends Activity {
 
 	public static native int unitInit(int play_rate, int play_channels,
 			int rec_rate, int rec_channels, int flags);
-
+	public static native void unitDestroy();
 	public static native int testSend();
 	public static native int transferOneFrame();
 	public static native int testRecordData();

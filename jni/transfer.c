@@ -31,7 +31,7 @@
 #else
 #define LOGI(...) 
 #define LOGE(...) 
-#define LOGD(...)__android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
+#define LOGD(...)
 #endif
 #define AUDIO_IOCTL_MAGIC 'a'
 
@@ -315,6 +315,15 @@ int unit_init(unsigned play_rate, unsigned play_channels, unsigned rec_rate, uns
 	LOGI("Init success\n");
 
 	return 1;
+}
+
+void unit_destroy()
+{
+	if(my_audio_struct.fd_output)
+		close(my_audio_struct.fd_output);
+	
+	if(my_audio_struct.fd_input)
+		close(my_audio_struct.fd_input);
 }
 
 int make_databit_(int bit)
@@ -851,7 +860,7 @@ int find_chars(const char *in, char *out, int count)
 
 	for(; i<count; i++)
 	{
-		if(in[i] == 255 && in[i-1] == 254)
+		if(in[i] == 198 && in[i-1] == 197)
 		{
 			b = i-1;
 			break;
@@ -1237,6 +1246,11 @@ fail:
 jint Java_com_thinpad_audiotransfer_AudiotransferActivity_unitInit(JNIEnv *env, jobject thiz, jint play_rate, jint play_channels, jint rec_rate, jint rec_channels, jint flags)
 {
  	return unit_init(play_rate, play_channels, rec_rate, rec_channels, flags);
+}
+
+void Java_com_thinpad_audiotransfer_AudiotransferActivity_unitDestroy()
+{
+	unit_destroy();
 }
 
 jint Java_com_thinpad_audiotransfer_AudiotransferActivity_testSend()
