@@ -52,7 +52,7 @@ public class AudiotransferActivity extends Activity {
 			case R.id.btn_receive:
 				//testSaveData();
 				byte[] tmp = new byte[1024];
-				int ret = receiveData(tmp,10);
+				int ret = receiveData(tmp,5);
 				if(ret>0){
 					for(int i=0; i<ret; i++){
 						System.out.println(tmp[i]);

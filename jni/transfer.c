@@ -744,7 +744,7 @@ int read_byte(char *temp, int end)
 		// 数据起始标志后，如果18个数据还没到数据位起始位置，则出错
 		if((j-pos)>22)
 		{
-			if(is_one_frame_end())
+			if(is_one_frame_end(end))
 				return 1;
 			LOGI("    -->no start bit - %d", j);
 			return 0;
@@ -756,60 +756,32 @@ int read_byte(char *temp, int end)
 	return 1;
 }
 
-int is_one_frame_end()
+int is_one_frame_end(int end)
 {
 	LOGI("is_one_frame_end --> current_pos: %d" ,current_pos);
 
-	int i=0,j=current_pos,k=0;
-	short *buf = input;
-
-	
-	// 抽样后三十个数据位，判断是否为结束标志（阶段1，14个以上高电平）
-	for(i=0; i<18*3*10; i++)
-	{
-		if(buf[j+i] < 8192) //32767-8192
-		{
-			k++;
-		}
-		else
-		{
-			k=0;
-		}
-	}
-
-	if(k>=18*3*8)
-	{
-		goto step2;
-	}
-	else
-	{
-		LOGI("    --> Not one frame end");
+	int i=current_pos,j=0,k=end;
+	signed short *buf = input;
+	if((end-i)<18*12)
 		return 0;
-	}
 
-step2:
-	k=0;
-	// 抽样后三十个数据位，判断是否为结束标志（阶段2，14个以上低电平）
-	for(; i<18*3*18; i++)
+	for(;i<current_pos+18*12;i++)
 	{
-		if(buf[j+i] >= 8192) //32767-8192
+		LOGI("buf[%d]: %d", i, buf[i]);
+		if(buf[i] < LOW_GATE) //32767-8192
 		{
-			k++;
+			j++;
 		}
 		else
 		{
-			k=0;
+			j=0;
 		}
-		
-		if(k>=18*3*4)
+		if(j>=18*4) //2个0xFF，至少14位1
 		{
-			LOGI("    --> One frame end: %d",i+18);
 			return 1;
 		}
 	}
-	
-	LOGI("    --> k: %d  current_pos: %d", k, current_pos+i);
-	LOGI("    --> Not one frame end-2");
+	LOGI("not frame end j: %d", j);
 	return 0;
 }
 
@@ -864,8 +836,17 @@ int find_data_start(int start, int end)
 					break;
 			}
 			current_pos = i-2;
-			LOGI("    --> find_data_start at: %d",i-2);
-			return current_pos;
+
+			if(buf[current_pos+4*18+9]>HIGH_GATE)
+			{
+				LOGI("    --> this is a 0xaa start: current_pos: %d", current_pos);
+				return -1;
+			}
+			else
+			{
+				LOGI("    --> find_data_start at: %d",current_pos);
+				return current_pos;
+			}
 		}
 	}
 	LOGI("    --> find_data_start failed (end at %d)", i-2);
@@ -940,6 +921,7 @@ int analysis_data(int start, int end)
 	while(current_pos < end)
 	{
 		int find=0;
+#if 0
 start:
 		find = find_start_point(current_pos, end);
 		if(find) //找到起始长时间低电平
@@ -948,9 +930,16 @@ start:
 			//找到0xaa起始位置
 			if(find_aa_start(current_pos,end))
 			{
-				if(!find_data_start(current_pos,end))
+#endif
+find:
+				find = find_data_start(current_pos,end);
+				if(find == 0)
 				{
 					return 0;
+				}
+				else if(find == -1)
+				{
+					goto find;
 				}
 				else
 				{
@@ -965,13 +954,13 @@ start:
 						if(!read_byte(&temp[i],end))
 						{
 							i=0;
-							goto start;
+							goto find;
 						}
 						LOGI("DATA[%d], 0x%x", i, temp[i]);
 						i++;
 						if(i==256)
 							break;
-					}while(!is_one_frame_end());
+					}while(!is_one_frame_end(end));
 
 					int ret;
 					if(ret = find_chars(temp, buf_out, i))
@@ -981,9 +970,11 @@ start:
 					else
 					{
 						i=0;
-						goto start;
+						goto find;
+
 					}
 				}
+#if 0
 			}
 			else
 			{
@@ -994,6 +985,7 @@ start:
 		{
 			return 0;
 		}
+#endif
 	}
 }
 
