@@ -673,7 +673,7 @@ int read_byte(char *temp, int end)
 	int i,j=current_pos,pos=current_pos;
 	short *buf = input; 
 
-	if(buf[j] >= LOW_GATE)
+	if(buf[j] <= HIGH_GATE)
 	{
 		LOGI("    -->not a valid start bit");
 		return 0; 	//Bad start bit
@@ -682,9 +682,9 @@ int read_byte(char *temp, int end)
 	while(j<end)
 	{
 		// 连续3个高电平，则第一个高电平为数据位起始位置
-		if(buf[j] >= HIGH_GATE && buf[j+1] >= HIGH_GATE && buf[j+2] >= HIGH_GATE)
+		if(buf[j] <= LOW_GATE && buf[j-1] <= LOW_GATE && buf[j-2] <= LOW_GATE)
 		{
-			current_pos = j; //将当前位置设置为高电平起始位置
+			current_pos = j-2; //将当前位置设置为高电平起始位置
 			break;
 		}
 		
@@ -697,15 +697,16 @@ int read_byte(char *temp, int end)
 
 		j++;
 	}
-	
+	LOGI("    -->current_pos: %d", current_pos);
 	//调整到第一位的中间位（0b110表示位1，0b100表示位0）
 	for(i=7,j+=9+18; i>=0; i--,j+=3*18)
 	{
-		if(buf[j] > HIGH_GATE)
+		LOGI("    current_pos-read: %d", j);
+		if(buf[j] < LOW_GATE)
 		{
 			tmp |= (1<<i);
 		}
-		else if(buf[j] < LOW_GATE)
+		else if(buf[j] > HIGH_GATE)
 		{
 			tmp &= ~(1<<i);
 		}
@@ -715,11 +716,13 @@ int read_byte(char *temp, int end)
 		}
 	}
 
+	LOGI("    -->current_pos-after-read: %d", current_pos);
 	//将当前位置设置为停止位上
-	current_pos = j-18;
+	current_pos = j-18+2;
 
+	LOGI("    -->current_pos-stopbit: %d", current_pos);
 	// 错误停止位
-	if(buf[current_pos] <= HIGH_GATE)
+	if(buf[current_pos] >= LOW_GATE)
 	{
 		LOGE("    --> Error on stop bit: %d", current_pos-18);
 		return 0;
@@ -732,7 +735,7 @@ int read_byte(char *temp, int end)
 	while(j<end)
 	{
 		// 连续3个高电平，则第一个高电平为数据位起始位置
-		if(buf[j] <= LOW_GATE && buf[j-1] <= LOW_GATE && buf[j-2] <= LOW_GATE)
+		if(buf[j] >= HIGH_GATE && buf[j-1] >= HIGH_GATE && buf[j-2] >= HIGH_GATE)
 		{
 			current_pos = j-2; //将当前位置设置为高电平起始位置
 			break;
@@ -764,7 +767,7 @@ int is_one_frame_end()
 	// 抽样后三十个数据位，判断是否为结束标志（阶段1，14个以上高电平）
 	for(i=0; i<18*3*10; i++)
 	{
-		if(buf[j+i] > -8192) //32767-8192
+		if(buf[j+i] < 8192) //32767-8192
 		{
 			k++;
 		}
@@ -789,7 +792,7 @@ step2:
 	// 抽样后三十个数据位，判断是否为结束标志（阶段2，14个以上低电平）
 	for(; i<18*3*18; i++)
 	{
-		if(buf[j+i] <= -8192) //32767-8192
+		if(buf[j+i] >= 8192) //32767-8192
 		{
 			k++;
 		}
@@ -844,7 +847,7 @@ int find_data_start(int start, int end)
 	signed short *buf = input;
 	for(;i<k;i++)
 	{
-		if(buf[i] > HIGH_GATE) //32767-8192
+		if(buf[i] < LOW_GATE) //32767-8192
 		{
 			j++;
 		}
@@ -857,15 +860,15 @@ int find_data_start(int start, int end)
 			while(i<k)
 			{
 				i++;
-				if((buf[i] < LOW_GATE) && (buf[i-1] < LOW_GATE) && (buf[i-2] < LOW_GATE))
+				if((buf[i] > HIGH_GATE) && (buf[i-1] > HIGH_GATE) && (buf[i-2] > HIGH_GATE))
 					break;
 			}
 			current_pos = i-2;
-			LOGI("    --> find_data_start at: %d",i);
+			LOGI("    --> find_data_start at: %d",i-2);
 			return current_pos;
 		}
 	}
-	LOGI("    --> find_data_start failed (end at %d)", i);
+	LOGI("    --> find_data_start failed (end at %d)", i-2);
 	return 0;
 }
 
@@ -877,15 +880,15 @@ int find_aa_start(int start, int end)
 	
 	for(;i<k;i++)
 	{
-		if((buf[i] > HIGH_GATE) && (buf[i-1] > HIGH_GATE) && (buf[i-2] > HIGH_GATE))
+		if((buf[i] < LOW_GATE) && (buf[i-1] < LOW_GATE) && (buf[i-2] < LOW_GATE))
 		{
-			LOGI("    find_aa_start at: %d",i);
+			LOGI("    find_aa_start at: %d",i-2);
 			current_pos = i-2;
 			//找到0xaa起始位置，返回成功
 			return 1;//break;
 		}
 	}
-	LOGI("    find_aa_start failed (end at %d)", i);
+	LOGI("    find_aa_start failed (end at %d)", i-2);
 	return 0;
 }
 
@@ -897,7 +900,7 @@ int find_chars(const char *in, char *out, int count)
 
 	for(i=0; i<count; i++)
 	{
-		if(in[i] == 1 && in[i-1] == 0)
+		if(in[i] == '#' && in[i-1] == '#')
 		{
 			a = i;
 			break;
@@ -906,7 +909,7 @@ int find_chars(const char *in, char *out, int count)
 
 	for(; i<count; i++)
 	{
-		if(in[i] == 198 && in[i-1] == 197)
+		if(in[i] == '@' && in[i-1] == '@')
 		{
 			b = i-1;
 			break;
@@ -964,6 +967,7 @@ start:
 							i=0;
 							goto start;
 						}
+						LOGI("DATA[%d], 0x%x", i, temp[i]);
 						i++;
 						if(i==256)
 							break;

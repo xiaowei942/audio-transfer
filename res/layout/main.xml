@@ -17,10 +17,15 @@
         android:text="发送消息" />
     
     <Button 
-        android:id="@+id/btn_save"
+        android:id="@+id/btn_receive"
         android:layout_width="fill_parent"
         android:layout_height="wrap_content"
         android:text="接收数据" />
     
+    <Button 
+        android:id="@+id/btn_save"
+        android:layout_width="fill_parent"
+        android:layout_height="wrap_content"
+        android:text="保存数据" />
     
 </LinearLayout>
