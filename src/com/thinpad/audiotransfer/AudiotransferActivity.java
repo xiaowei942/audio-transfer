@@ -5,7 +5,7 @@ import android.os.Bundle;
 import android.view.View;
 import android.view.View.OnClickListener;
 import android.widget.Button;
-
+ 
 public class AudiotransferActivity extends Activity {
 	@Override
 	protected void onDestroy() {
@@ -49,7 +49,7 @@ public class AudiotransferActivity extends Activity {
 			case R.id.btn_save:
 				//testSaveData();
 				byte[] tmp = new byte[1024];
-				int ret = receiveData(tmp,5);
+				int ret = receiveData(tmp,8);
 				if(ret>0){
 					for(int i=0; i<ret; i++){
 						System.out.println(tmp[i]);

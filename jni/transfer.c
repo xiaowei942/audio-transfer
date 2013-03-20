@@ -21,7 +21,7 @@
 #define INPUT_DEVNAME "/dev/msm_pcm_in"
 #define OUTPUT_DEVNAME "/dev/msm_pcm_out"
 
-//#define __DEBUG
+#define __DEBUG
 #define LOG_TAG "WEI:jni "
 
 #ifdef __DEBUG
@@ -485,6 +485,49 @@ byte2chars(char in)
 	}
 }
 
+// 字节扩展为表示位信息的字符数组，带起始、停止位
+byte2chars_bits(char in)
+{
+	int i,j;
+
+	//开始位
+	for(j=0;j<36;j++)
+	{
+		output[out_index] = bit1[j];
+		out_index++;
+	}
+
+	//依次转换输出数据字符数组中的每一位(由高到低)
+	for(i=7;i>=0;i--)
+	{
+		if((in>>i)&0x1)
+		{
+			LOGI("1");
+			for(j=0;j<36;j++)
+			{
+				output[out_index] = bit0[j];
+				out_index++;
+			}
+		}
+		else
+		{
+			LOGI("0");
+			for(j=0;j<36;j++)
+			{
+				output[out_index] = bit1[j];
+				out_index++;
+			}
+		}
+	}
+
+	//停止位
+	for(j=0;j<36;j++)
+	{
+		output[out_index] = bit0[j];
+		out_index++;
+	}
+}
+
 int test_transferOneFrame()
 {
 	int i;
@@ -501,26 +544,10 @@ int make_message(char *dest, unsigned char *msg, int msg_len)
 {
 	LOGI("make_message");
 
-	memcpy(dest, head_out, head_len);
-	memcpy(dest+head_len, msg, msg_len);
-	
-	// 构造校验字节
-	int i;
-	for(i=0; i<msg_len; i++)
-	{
-		msg[i] = ~msg[i];
-	}
-	
-	// 加入校验字节
-	memcpy(dest+head_len+msg_len, msg, msg_len);
-
-	// 写入消息尾
-	memcpy(dest+head_len+2*msg_len, tail_out, tail_len);
+	memcpy(dest, msg, msg_len);
 
 #if 1	
-	LOGI("head_len:%d",head_len);
 	LOGI("msg_len:%d",msg_len);
-	LOGI("tail_len:%d",tail_len);
 	
 	int t;
 	for(t=0;t<sum;t++)
@@ -593,11 +620,30 @@ void send_message(struct audio_struct *aud, const int count)
 
 	out_index=0;
 
+	for(i=0;i<head_len;i++)
+	{
+		LOGI("head[%d]: 0x%x", i, head_out[i]);
+		byte2chars(head_out[i]);
+	}
+
 	for(i=0;i<count;i++)
 	{
 		LOGI("msg[%d]: 0x%x", i, aud->msg[i]);
-		byte2chars(aud->msg[i]);
+		byte2chars_bits(aud->msg[i]);
 	}
+
+	for(i=0;i<count;i++)
+	{
+		byte2chars_bits(~aud->msg[i]);
+		LOGI("~msg[%d]: 0x%x", i, ~aud->msg[i]);
+	}
+
+	for(i=0;i<tail_len;i++)
+	{
+		LOGI("tail[%d]: 0x%x", i, tail_out[i]);
+		byte2chars(tail_out[i]);
+	}
+
 	
 	transform_message(aud);
 
@@ -619,7 +665,7 @@ void send_message(struct audio_struct *aud, const int count)
 	do_send(aud);
 }
 
-int read_byte(char *temp)
+int read_byte(char *temp, int end)
 {
 	LOGI("read_byte --> current_pos: %d", current_pos);
 	unsigned char tmp=0;
@@ -633,7 +679,7 @@ int read_byte(char *temp)
 		return 0; 	//Bad start bit
 	}
 
-	while(1)
+	while(j<end)
 	{
 		// 连续3个高电平，则第一个高电平为数据位起始位置
 		if(buf[j] >= HIGH_GATE && buf[j+1] >= HIGH_GATE && buf[j+2] >= HIGH_GATE)
@@ -683,12 +729,12 @@ int read_byte(char *temp)
 	pos=current_pos;
 	LOGI("    tmp: %d", *temp);
 
-	while(1)
+	while(j<end)
 	{
 		// 连续3个高电平，则第一个高电平为数据位起始位置
-		if(buf[j] <= LOW_GATE && buf[j+1] <= LOW_GATE && buf[j+2] <= LOW_GATE)
+		if(buf[j] <= LOW_GATE && buf[j-1] <= LOW_GATE && buf[j-2] <= LOW_GATE)
 		{
-			current_pos = j; //将当前位置设置为高电平起始位置
+			current_pos = j-2; //将当前位置设置为高电平起始位置
 			break;
 		}
 		
@@ -808,13 +854,13 @@ int find_data_start(int start, int end)
 		}
 		if(j>=18*8) //2个0xFF，至少14位1
 		{
-			while(1)
+			while(i<k)
 			{
 				i++;
-				if((buf[i] < LOW_GATE) && (buf[i+1] < LOW_GATE) && (buf[i+2] < LOW_GATE))
+				if((buf[i] < LOW_GATE) && (buf[i-1] < LOW_GATE) && (buf[i-2] < LOW_GATE))
 					break;
 			}
-			current_pos = i;
+			current_pos = i-2;
 			LOGI("    --> find_data_start at: %d",i);
 			return current_pos;
 		}
@@ -831,10 +877,10 @@ int find_aa_start(int start, int end)
 	
 	for(;i<k;i++)
 	{
-		if((buf[i] > HIGH_GATE) && (buf[i+1] > HIGH_GATE) && (buf[i+2] > HIGH_GATE))
+		if((buf[i] > HIGH_GATE) && (buf[i-1] > HIGH_GATE) && (buf[i-2] > HIGH_GATE))
 		{
 			LOGI("    find_aa_start at: %d",i);
-			current_pos = i;
+			current_pos = i-2;
 			//找到0xaa起始位置，返回成功
 			return 1;//break;
 		}
@@ -913,7 +959,7 @@ start:
 							LOGI("no enough datas, success: %d",success);
 							return 0;
 						}
-						if(!read_byte(&temp[i]))
+						if(!read_byte(&temp[i],end))
 						{
 							i=0;
 							goto start;
@@ -1275,7 +1321,7 @@ jint Java_com_thinpad_audiotransfer_AudiotransferActivity_sendMessage(JNIEnv *en
 	GET_ARRAY_LEN(tail_out,tail_len);
 
 	//计算总消息长度,消息长度＊2为了校验
-	sum = head_len + tail_len + msg_len*2;
+	sum = msg_len;
 
 	char *buf;
 	buf = (char *)malloc(sum);
