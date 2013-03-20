@@ -1,8 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="fill_parent"
-    android:layout_height="fill_parent"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
     android:orientation="vertical" >
+
+    <EditText
+        android:id="@+id/editText1"
+        android:layout_width="match_parent"
+        android:layout_height="176dp"
+        android:ems="10"
+        android:inputType="textMultiLine" >
+
+        <requestFocus />
+    </EditText>
 
     <Button
         android:id="@+id/btn_init"
@@ -10,7 +20,7 @@
         android:layout_height="wrap_content"
         android:text="初始化设备" />
     
-    <Button 
+    <Button
         android:id="@+id/btn_send"
         android:layout_width="fill_parent"
         android:layout_height="wrap_content"
@@ -28,4 +38,10 @@
         android:layout_height="wrap_content"
         android:text="保存数据" />
     
+    <TextView
+        android:id="@+id/textview1"
+        android:layout_width="fill_parent"
+        android:layout_height="wrap_content"
+        android:text="" />
+
 </LinearLayout>

@@ -89,7 +89,7 @@ struct audio_struct {
 	int fd_input;
 	int fd_output;
 
-	char *msg;
+	unsigned char *msg;
 	char *outbuf;
 
 	unsigned play_rate;
@@ -632,12 +632,23 @@ void send_message(struct audio_struct *aud, const int count)
 		byte2chars_bits(aud->msg[i]);
 	}
 
+	unsigned char sum=0;
+
+	for(i=0;i<count;i++)
+	{
+		sum += aud->msg[i];
+	}
+
+	LOGE("sum: 0x%x", sum);
+	byte2chars_bits(sum);
+
+/*
 	for(i=0;i<count;i++)
 	{
 		byte2chars_bits(~aud->msg[i]);
 		LOGI("~msg[%d]: 0x%x", i, ~aud->msg[i]);
 	}
-
+*/
 	for(i=0;i<tail_len;i++)
 	{
 		LOGI("tail[%d]: 0x%x", i, tail_out[i]);
