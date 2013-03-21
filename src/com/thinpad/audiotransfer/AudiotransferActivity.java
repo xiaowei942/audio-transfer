@@ -1,5 +1,6 @@
 package com.thinpad.audiotransfer;
 
+import android.R.integer;
 import android.app.Activity;
 import android.os.Bundle;
 import android.view.View;
@@ -49,20 +50,33 @@ public class AudiotransferActivity extends Activity {
 			// TODO Auto-generated method stub
 			switch (arg0.getId()) {
 			case R.id.btn_init:
-				unitInit(44100, 1, 44100, 2, (OUTPUT_FLAG | INPUT_FLAG));
+				
+				int ret = unitInit(44100, 1, 44100, 2, (OUTPUT_FLAG | INPUT_FLAG));
+			
+				if(ret == 1)
+				{
+					setTitle("初始化成功！");
+				}
+				else 
+				{
+					setTitle("初始化失败");
+				}
+				
 				break;
+				
 			case R.id.btn_send:
-				edit1.setText("");
-				sendMessage("sts".getBytes(), "sts".getBytes().length);
+				edit1.setText("Sending ...");
+				sendMessage("tst".getBytes(), "tst".getBytes().length);
+				edit1.setText("Sent");
 				break;
 			case R.id.btn_receive:
-
-				edit1.setText("");
+				text = null;
+				edit1.setText("Receiving ...");
 				sendMessage("s".getBytes(), "s".getBytes().length);
 				
-				//testSaveData();
 				byte[] tmp = new byte[1024];
-				int ret = receiveData(tmp,5);
+				ret = receiveData(tmp,5);
+				
 				if(ret>0){
 					byte[]temp = new byte[ret];
 					for(int i=0; i<ret; i++){
@@ -75,7 +89,7 @@ public class AudiotransferActivity extends Activity {
 					
 				} else if(ret==0){
 					System.out.println("接收异常");
-					edit1.setText("数据错误");
+					edit1.setText("接收异常");
 				} else  //返回 -1
 				{
 					System.out.println("超时");

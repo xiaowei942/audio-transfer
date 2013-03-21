@@ -21,7 +21,7 @@
 #define INPUT_DEVNAME "/dev/msm_pcm_in"
 #define OUTPUT_DEVNAME "/dev/msm_pcm_out"
 
-#define __DEBUG
+//#define __DEBUG
 #define LOG_TAG "WEI:jni "
 
 #ifdef __DEBUG
@@ -184,29 +184,26 @@ char tail_in[] = {
 #define HIGH_GATE 32767-8192
 #define LOW_GATE -32767+8192
 
-char input[DATA_LEN];
-char output[480000]; //实际输出数据
+char input[DATA_LEN]; // 实际输入数据
+char output[480000]; // 实际输出数据
 unsigned out_index = 0; //实际输出索引
 unsigned out_count = 0; //实际输出计数
+int current_pos = 0; // 用来解析数据的当前数据位置索引
 
+int onetime=0;  //确保预填充一次
 char *prefill; 	//预填充缓冲区
 int head_len=0; //消息头长度
 int tail_len=0; //消息尾长度
 int msg_len=0; 	//消息长度
 int sum=0; 	//消息字节总数
 
-int can_read = 0;
-int current_pos = 0;
-int buffered = 0;
-int buffer_full = 0;
 
-char buffer[1024];
-char temp[1024];
-char buf_out[1024];
-int test_recordData();
+char temp[1024]; //用来存放接收的数据
+char buf_out[1024]; //用来存放解析到的有效数据
 
 int open_files(unsigned flags)
 {
+	int ret=0;
 	int fd_in, fd_out;
 	LOGI("open_file --> flags: %d",flags);
 	if(flags & INPUT_FLAG)
@@ -214,8 +211,11 @@ int open_files(unsigned flags)
 		fd_in = open(INPUT_DEVNAME,O_RDWR);
 		if(fd_in < 0)
 		{
-			LOGE("Cannot open input file");
-			goto input_failed;		
+			LOGE("Cannot open input file");		
+		}
+		else
+		{
+			ret |= INPUT_FLAG;
 		}
 		LOGI("Open input success");
 		my_audio_struct.fd_input = fd_in;
@@ -226,22 +226,17 @@ int open_files(unsigned flags)
 		fd_out = open(OUTPUT_DEVNAME,O_RDWR); 
 		if(fd_out < 0)
 		{
-			LOGE("Cannot open output file");
-			goto output_failed;		
+			LOGE("Cannot open output file");		
+		}
+		else
+		{
+			ret |= OUTPUT_FLAG;
 		}
 		LOGI("Open output success");
 		my_audio_struct.fd_output = fd_out;
 	}
-	return 0;
 
-output_failed:
-	if(fd_out)
-	{
-		LOGI("Close /dev/msm_pcm_out");
-		close(fd_out);
-	}
-input_failed:
-	return -1;
+	return ret;
 }
 
 int set_params(unsigned play_rate, unsigned play_channels, unsigned rec_rate, unsigned rec_channels, unsigned flags)
@@ -305,20 +300,24 @@ int set_params(unsigned play_rate, unsigned play_channels, unsigned rec_rate, un
 
 int unit_init(unsigned play_rate, unsigned play_channels, unsigned rec_rate, unsigned rec_channels, unsigned flags)
 {
-
-	if(open_files(flags) != 0)
+	if(open_files(flags) == 0)
 		return -1;
 
 	if(set_params(play_rate, play_channels, rec_rate, rec_channels, flags) != 0)
 		return -1;
 
 	LOGI("Init success\n");
-
 	return 1;
 }
 
 void unit_destroy()
 {
+	if(!prefill)
+		free(prefill);
+
+	if(my_audio_struct.fd_output)
+		ioctl(my_audio_struct.fd_output, AUDIO_STOP, 0);
+
 	if(my_audio_struct.fd_output)
 		close(my_audio_struct.fd_output);
 	
@@ -466,7 +465,6 @@ byte2chars(char in)
 	{
 		if((in>>i)&0x1)
 		{
-			LOGI("1");
 			for(j=0;j<36;j++)
 			{
 				output[out_index] = bit0[j];
@@ -475,7 +473,6 @@ byte2chars(char in)
 		}
 		else
 		{
-			LOGI("0");
 			for(j=0;j<36;j++)
 			{
 				output[out_index] = bit1[j];
@@ -502,7 +499,6 @@ byte2chars_bits(char in)
 	{
 		if((in>>i)&0x1)
 		{
-			LOGI("1");
 			for(j=0;j<36;j++)
 			{
 				output[out_index] = bit0[j];
@@ -511,7 +507,6 @@ byte2chars_bits(char in)
 		}
 		else
 		{
-			LOGI("0");
 			for(j=0;j<36;j++)
 			{
 				output[out_index] = bit1[j];
@@ -565,31 +560,36 @@ int do_send(struct audio_struct *aud)
 		return -EINVAL;
 
 	char *temp = output;
-
-	int n=0;
-	for(n=0; n<aud->output_config.buffer_count; n++)
+	if(!onetime)
 	{
-		if(write(aud->fd_output, prefill, aud->output_config.buffer_size) != aud->output_config.buffer_size)
+		int n=0;
+		for(n=0; n<aud->output_config.buffer_count; n++)
 		{
-			LOGI("Prefill failed");
-			break;
+			if(write(aud->fd_output, prefill, aud->output_config.buffer_size) != aud->output_config.buffer_size)
+			{
+				LOGI("Prefill failed");
+				return -1;
+			}
 		}
+		onetime = 1;
+		ioctl(aud->fd_output, AUDIO_START, 0);
 	}
-
-	ioctl(aud->fd_output, AUDIO_START, 0);
 	int i;
 
 	for(i=0; i<out_count/aud->output_config.buffer_size; i++)
 	{
 		LOGI("Sending ...");
+		int count;
 		if(write(aud->fd_output, temp, aud->output_config.buffer_size) != aud->output_config.buffer_size)
 		{
 			LOGI("Send failed");
-			break;
+			return -1;
 		}
 		temp += aud->output_config.buffer_size;
+		count += aud->output_config.buffer_size;
 	}
 	LOGI("Send success");
+//	ioctl(aud->fd_output, AUDIO_STOP, 0);
 	return 0;
 }
 
@@ -612,7 +612,7 @@ void transform_message(struct audio_struct *aud)
 
 }
 
-void send_message(struct audio_struct *aud, const int count)
+int send_message(struct audio_struct *aud, const int count)
 {
 	
 	int i,j;
@@ -622,13 +622,13 @@ void send_message(struct audio_struct *aud, const int count)
 
 	for(i=0;i<head_len;i++)
 	{
-		LOGI("head[%d]: 0x%x", i, head_out[i]);
+		//LOGI("head[%d]: 0x%x", i, head_out[i]);
 		byte2chars(head_out[i]);
 	}
 
 	for(i=0;i<count;i++)
 	{
-		LOGI("msg[%d]: 0x%x", i, aud->msg[i]);
+		//LOGI("msg[%d]: 0x%x", i, aud->msg[i]);
 		byte2chars_bits(aud->msg[i]);
 	}
 
@@ -639,8 +639,8 @@ void send_message(struct audio_struct *aud, const int count)
 		sum += aud->msg[i];
 	}
 
-	LOGE("sum: 0x%x", sum);
-	byte2chars_bits(sum);
+	//LOGE("~sum: 0x%x", ~sum&0xff);
+	byte2chars_bits(~sum&0xff);
 
 /*
 	for(i=0;i<count;i++)
@@ -651,7 +651,7 @@ void send_message(struct audio_struct *aud, const int count)
 */
 	for(i=0;i<tail_len;i++)
 	{
-		LOGI("tail[%d]: 0x%x", i, tail_out[i]);
+		//LOGI("tail[%d]: 0x%x", i, tail_out[i]);
 		byte2chars(tail_out[i]);
 	}
 
@@ -663,17 +663,21 @@ void send_message(struct audio_struct *aud, const int count)
 	int prefill_size = my_audio_struct.output_config.buffer_count*my_audio_struct.output_config.buffer_size;
 
 	if(!prefill)
+	{
+		LOGI("Malloc prefill");
 		prefill = malloc(prefill_size);
 
-	for(i=0; i<prefill_size; i++)
-	{
-		for(j=0;j<36;j++)
+		for(i=0; i<prefill_size; i++)
 		{
-			prefill[i] = bit1[j];
+			for(j=0;j<36;j++)
+			{
+				prefill[i] = bit1[j];
+			}
 		}
 	}
 
-	do_send(aud);
+	int ret = do_send(aud);
+	return ret;
 }
 
 int read_byte(char *temp, int end)
@@ -708,11 +712,11 @@ int read_byte(char *temp, int end)
 
 		j++;
 	}
-	LOGI("    -->current_pos: %d", current_pos);
+	//LOGI("    -->current_pos: %d", current_pos);
 	//调整到第一位的中间位（0b110表示位1，0b100表示位0）
 	for(i=7,j+=9+18; i>=0; i--,j+=3*18)
 	{
-		LOGI("    current_pos-read: %d", j);
+	//	LOGI("    current_pos-read: %d", j);
 		if(buf[j] < LOW_GATE)
 		{
 			tmp |= (1<<i);
@@ -1099,7 +1103,6 @@ int test_recordData()
 			}
 			total += my_audio_struct.input_config.buffer_size*2;
 			cur = total;
-			buffered = total;
 		}
 		else
 		{
