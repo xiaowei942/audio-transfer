@@ -72,10 +72,12 @@ public class AudiotransferActivity extends Activity {
 			case R.id.btn_receive:
 				text = null;
 				edit1.setText("Receiving ...");
-				sendMessage("s".getBytes(), "s".getBytes().length);
+				byte[] command = {0x68,(byte)0xAA,(byte)0xAA,(byte)0xAA,(byte)0xAA,(byte)0xAA,(byte)0xAA,0x68,0x13,0x00,(byte)0xdf,0x16};
+				sendMessage(command, command.length);
+				//	sendMessage("s".getBytes(), "s".getBytes().length);
 				
 				byte[] tmp = new byte[1024];
-				ret = receiveData(tmp,5);
+				ret = receiveData(tmp,7);
 				
 				if(ret>0){
 					byte[]temp = new byte[ret];
