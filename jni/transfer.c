@@ -181,8 +181,8 @@ char tail_in[] = {
 #define DATA_LEN DATA_LEN_1S*SECONDS
 #define BUF_LEN DATA_LEN/2
 
-#define HIGH_GATE 32767-8192
-#define LOW_GATE -32767+8192
+#define HIGH_GATE 32767-8192 //高电平数据阈值
+#define LOW_GATE -32767+8192 //低电平数据阈值
 
 char input[DATA_LEN]; // 实际输入数据
 char output[480000]; // 实际输出数据
@@ -201,6 +201,18 @@ int sum=0; 	//消息字节总数
 char temp[1024]; //用来存放接收的数据
 char buf_out[1024]; //用来存放解析到的有效数据
 
+
+/********************************************************
+ * 函数：	open_files    				*
+ * 参数： 	
+ * 		flags 打开的文件标识 		        *
+ * 	 	    可选值：  			        *
+ * 			INPUT_FLAG  打开输入文件        *
+ * 			OUTPUT_FLAG 打开输出文件        *
+ * 返回值： 	返回成功打开的文件标识，打开失败返回0。 *
+ * 说明： 	打开输入输出音频的设备文件无 					*
+ * 							*
+ ********************************************************/
 int open_files(unsigned flags)
 {
 	int ret=0;
@@ -239,6 +251,21 @@ int open_files(unsigned flags)
 	return ret;
 }
 
+
+
+/****************************************************************
+ * 函数：	set_params    					*
+ * 参数：  							*
+ * 		flags 打开的文件标识 		      		*
+ * 	 	    可选值：  			       		*
+ * 			INPUT_FLAG  打开输入文件        	*
+ * 			OUTPUT_FLAG 打开输出文件        	*
+ * 		play_rate 播放的采集频率，暂时仅为44100		*
+ * 		play_rate 播放的采集频率，暂时仅为44100		*
+ * 返回值： 	返回成功打开的文件标识，打开失败返回0。 	*
+ * 说明： 	打开输入输出音频的设备文件无 			*
+ * 								*
+ ****************************************************************/
 int set_params(unsigned play_rate, unsigned play_channels, unsigned rec_rate, unsigned rec_channels, unsigned flags)
 {
 	if(flags & INPUT_FLAG)
@@ -631,7 +658,7 @@ int send_message(struct audio_struct *aud, const int count)
 		//LOGI("msg[%d]: 0x%x", i, aud->msg[i]);
 		byte2chars_bits(aud->msg[i]);
 	}
-
+/*
 	unsigned char sum=0;
 
 	for(i=0;i<count;i++)
@@ -641,7 +668,7 @@ int send_message(struct audio_struct *aud, const int count)
 
 	//LOGE("~sum: 0x%x", ~sum&0xff);
 	byte2chars_bits(~sum&0xff);
-
+*/
 /*
 	for(i=0;i<count;i++)
 	{
@@ -688,7 +715,7 @@ int read_byte(char *temp, int end)
 	int i,j=current_pos,pos=current_pos;
 	short *buf = input; 
 
-	if(buf[j] <= HIGH_GATE)
+	if(buf[j] >= LOW_GATE)
 	{
 		LOGI("    -->not a valid start bit");
 		return 0; 	//Bad start bit
@@ -697,7 +724,7 @@ int read_byte(char *temp, int end)
 	while(j<end)
 	{
 		// 连续3个高电平，则第一个高电平为数据位起始位置
-		if(buf[j] <= LOW_GATE && buf[j-1] <= LOW_GATE && buf[j-2] <= LOW_GATE)
+		if(buf[j] >= HIGH_GATE && buf[j-1] >= HIGH_GATE && buf[j-2] >= HIGH_GATE)
 		{
 			current_pos = j-2; //将当前位置设置为高电平起始位置
 			break;
@@ -717,11 +744,11 @@ int read_byte(char *temp, int end)
 	for(i=7,j+=9+18; i>=0; i--,j+=3*18)
 	{
 	//	LOGI("    current_pos-read: %d", j);
-		if(buf[j] < LOW_GATE)
+		if(buf[j] > HIGH_GATE)
 		{
 			tmp |= (1<<i);
 		}
-		else if(buf[j] > HIGH_GATE)
+		else if(buf[j] < LOW_GATE)
 		{
 			tmp &= ~(1<<i);
 		}
@@ -737,7 +764,7 @@ int read_byte(char *temp, int end)
 
 	LOGI("    -->current_pos-stopbit: %d", current_pos);
 	// 错误停止位
-	if(buf[current_pos] >= LOW_GATE)
+	if(buf[current_pos] <= HIGH_GATE)
 	{
 		LOGE("    --> Error on stop bit: %d", current_pos-18);
 		return 0;
@@ -750,7 +777,7 @@ int read_byte(char *temp, int end)
 	while(j<end)
 	{
 		// 连续3个高电平，则第一个高电平为数据位起始位置
-		if(buf[j] >= HIGH_GATE && buf[j-1] >= HIGH_GATE && buf[j-2] >= HIGH_GATE)
+		if(buf[j] <= LOW_GATE && buf[j-1] <= LOW_GATE && buf[j-2] <= LOW_GATE)
 		{
 			current_pos = j-2; //将当前位置设置为高电平起始位置
 			break;
@@ -783,7 +810,7 @@ int is_one_frame_end(int end)
 	for(;i<current_pos+18*12;i++)
 	{
 		LOGI("buf[%d]: %d", i, buf[i]);
-		if(buf[i] < LOW_GATE) //32767-8192
+		if(buf[i] > HIGH_GATE) //32767-8192
 		{
 			j++;
 		}
@@ -834,7 +861,7 @@ int find_data_start(int start, int end)
 	signed short *buf = input;
 	for(;i<k;i++)
 	{
-		if(buf[i] < LOW_GATE) //32767-8192
+		if(buf[i] > HIGH_GATE) //32767-8192
 		{
 			j++;
 		}
@@ -847,12 +874,12 @@ int find_data_start(int start, int end)
 			while(i<k)
 			{
 				i++;
-				if((buf[i] > HIGH_GATE) && (buf[i-1] > HIGH_GATE) && (buf[i-2] > HIGH_GATE))
+				if((buf[i] < LOW_GATE) && (buf[i-1] < LOW_GATE) && (buf[i-2] < LOW_GATE))
 					break;
 			}
 			current_pos = i-2;
 
-			if(buf[current_pos+4*18+9]>HIGH_GATE)
+			if(buf[current_pos+4*18+9] < LOW_GATE)
 			{
 				LOGI("    --> this is a 0xaa start: current_pos: %d", current_pos);
 				return -1;
@@ -876,7 +903,7 @@ int find_aa_start(int start, int end)
 	
 	for(;i<k;i++)
 	{
-		if((buf[i] < LOW_GATE) && (buf[i-1] < LOW_GATE) && (buf[i-2] < LOW_GATE))
+		if((buf[i] > HIGH_GATE) && (buf[i-1] > HIGH_GATE) && (buf[i-2] > HIGH_GATE))
 		{
 			LOGI("    find_aa_start at: %d",i-2);
 			current_pos = i-2;
